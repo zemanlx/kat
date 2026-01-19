@@ -1,6 +1,8 @@
 package evaluator
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -11,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apiserver/pkg/authentication/user"
 )
 
 func TestNew(t *testing.T) {
@@ -1497,6 +1500,343 @@ object.spec.containers.all(container,
 
 			if tc.expectMessage != "" && result.Message != tc.expectMessage {
 				t.Errorf("Expected message %q, got %q", tc.expectMessage, result.Message)
+			}
+		})
+	}
+}
+
+type MockTestCase struct {
+	Request                *admissionv1.AdmissionRequest
+	Object                 *unstructured.Unstructured
+	OldObject              *unstructured.Unstructured
+	Params                 *unstructured.Unstructured
+	NamespaceObj           *unstructured.Unstructured
+	UserInfo               user.Info
+	ExpectAllowed          bool
+	ExpectMessage          string
+	ExpectWarnings         []string
+	ExpectAuditAnnotations map[string]string
+	ExpectedObject         *unstructured.Unstructured
+	Error                  error
+	Authorizer             []AuthorizationMockConfig
+}
+
+func (m MockTestCase) GetRequest() *admissionv1.AdmissionRequest     { return m.Request }
+func (m MockTestCase) GetObject() *unstructured.Unstructured         { return m.Object }
+func (m MockTestCase) GetOldObject() *unstructured.Unstructured      { return m.OldObject }
+func (m MockTestCase) GetParams() *unstructured.Unstructured         { return m.Params }
+func (m MockTestCase) GetNamespaceObj() *unstructured.Unstructured   { return m.NamespaceObj }
+func (m MockTestCase) GetUserInfo() user.Info                        { return m.UserInfo }
+func (m MockTestCase) GetExpectAllowed() bool                        { return m.ExpectAllowed }
+func (m MockTestCase) GetExpectMessage() string                      { return m.ExpectMessage }
+func (m MockTestCase) GetExpectWarnings() []string                   { return m.ExpectWarnings }
+func (m MockTestCase) GetExpectAuditAnnotations() map[string]string  { return m.ExpectAuditAnnotations }
+func (m MockTestCase) GetExpectedObject() *unstructured.Unstructured { return m.ExpectedObject }
+func (m MockTestCase) GetError() error                               { return m.Error }
+func (m MockTestCase) GetAuthorizer() []AuthorizationMockConfig      { return m.Authorizer }
+
+//nolint:funlen,maintidx // Test function
+func TestEvaluator_EvaluateTest(t *testing.T) {
+	t.Parallel()
+
+	evaluator, err := New()
+	if err != nil {
+		t.Fatalf("Failed to create evaluator: %v", err)
+	}
+
+	validPod := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata": map[string]interface{}{
+				"name":      "test-pod",
+				"namespace": "default",
+			},
+		},
+	}
+
+	tests := []struct {
+		name              string
+		mutatingPolicy    *admissionv1beta1.MutatingAdmissionPolicy
+		validatingPolicy  *admissionregv1.ValidatingAdmissionPolicy
+		validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding
+		testCase          MockTestCase
+		wantPassed        bool
+		wantMessage       string
+	}{
+		{
+			name: "TestCase with Error",
+			testCase: MockTestCase{
+				//nolint:err113 // Dynamic error for test
+				Error: errors.New("loading error"),
+			},
+			wantPassed:  false,
+			wantMessage: "test loading error: loading error",
+		},
+		{
+			name: "No Policy Provided",
+			testCase: MockTestCase{
+				Object: validPod,
+			},
+			wantPassed:  false,
+			wantMessage: "no policy provided",
+		},
+		{
+			name: "Validating Policy Pass",
+			validatingPolicy: &admissionregv1.ValidatingAdmissionPolicy{
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Validations: []admissionregv1.Validation{
+						{Expression: "true"},
+					},
+				},
+			},
+			testCase: MockTestCase{
+				Object:        validPod,
+				ExpectAllowed: true,
+			},
+			wantPassed: true,
+		},
+		{
+			name: "Validating Policy Fail - Mismatch Expected Allowed",
+			validatingPolicy: &admissionregv1.ValidatingAdmissionPolicy{
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Validations: []admissionregv1.Validation{
+						{Expression: "false", Message: "denied"},
+					},
+				},
+			},
+			testCase: MockTestCase{
+				Object:        validPod,
+				ExpectAllowed: true, // Expect allow, but policy denies
+			},
+			wantPassed:  false,
+			wantMessage: "expected allowed=true, got allowed=false",
+		},
+		{
+			name: "Validating Policy Fail - Correct Expectation",
+			validatingPolicy: &admissionregv1.ValidatingAdmissionPolicy{
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Validations: []admissionregv1.Validation{
+						{Expression: "false", Message: "denied"},
+					},
+				},
+			},
+			testCase: MockTestCase{
+				Object:        validPod,
+				ExpectAllowed: false,
+				ExpectMessage: "denied",
+			},
+			wantPassed: true,
+		},
+		{
+			name: "Mutating Policy Success",
+			mutatingPolicy: &admissionv1beta1.MutatingAdmissionPolicy{
+				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionv1beta1.Mutation{
+						{
+							PatchType: admissionv1beta1.PatchTypeJSONPatch,
+							JSONPatch: &admissionv1beta1.JSONPatch{
+								Expression: `[JSONPatch{op: "add", path: "/metadata/labels", value: {"foo": "bar"}}]`,
+							},
+						},
+					},
+				},
+			},
+			testCase: MockTestCase{
+				Object:        validPod,
+				ExpectAllowed: true,
+				ExpectedObject: &unstructured.Unstructured{
+					Object: map[string]interface{}{
+						"apiVersion": "v1",
+						"kind":       "Pod",
+						"metadata": map[string]interface{}{
+							"name":      "test-pod",
+							"namespace": "default",
+							"labels": map[string]interface{}{
+								"foo": "bar",
+							},
+						},
+					},
+				},
+			},
+			wantPassed: true,
+		},
+		{
+			name: "Mutating Policy - Expected Object Mismatch",
+			mutatingPolicy: &admissionv1beta1.MutatingAdmissionPolicy{
+				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionv1beta1.Mutation{
+						{
+							PatchType: admissionv1beta1.PatchTypeJSONPatch,
+							JSONPatch: &admissionv1beta1.JSONPatch{
+								Expression: `[JSONPatch{op: "add", path: "/metadata/labels", value: {"foo": "bar"}}]`,
+							},
+						},
+					},
+				},
+			},
+			testCase: MockTestCase{
+				Object:        validPod,
+				ExpectAllowed: true,
+				ExpectedObject: &unstructured.Unstructured{ // Expect different label
+					Object: map[string]interface{}{
+						"apiVersion": "v1",
+						"kind":       "Pod",
+						"metadata": map[string]interface{}{
+							"name":      "test-pod",
+							"namespace": "default",
+							"labels": map[string]interface{}{
+								"foo": "baz",
+							},
+						},
+					},
+				},
+			},
+			wantPassed:  false,
+			wantMessage: "mutated object does not match expected",
+		},
+		{
+			name: "Audit Annotation Mismatch",
+			validatingPolicy: &admissionregv1.ValidatingAdmissionPolicy{
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					AuditAnnotations: []admissionregv1.AuditAnnotation{
+						{Key: "key1", ValueExpression: "'value1'"},
+					},
+					Validations: []admissionregv1.Validation{{Expression: "true"}},
+				},
+			},
+			testCase: MockTestCase{
+				Object: validPod,
+				ExpectAuditAnnotations: map[string]string{
+					"key1": "value2", // Mismatch expectation
+				},
+				ExpectAllowed: true,
+			},
+			wantPassed:  false,
+			wantMessage: "audit annotations do not match expected",
+		},
+		{
+			name: "Warning Mismatch",
+			validatingPolicy: &admissionregv1.ValidatingAdmissionPolicy{
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Validations: []admissionregv1.Validation{
+						{Expression: "false", Message: "warn me"},
+					},
+				},
+			},
+			validatingBinding: &admissionregv1.ValidatingAdmissionPolicyBinding{
+				Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+					ValidationActions: []admissionregv1.ValidationAction{admissionregv1.Warn},
+				},
+			},
+			testCase: MockTestCase{
+				Object:         validPod,
+				ExpectAllowed:  true,
+				ExpectWarnings: []string{"expecting different warning"},
+			},
+			wantPassed:  false,
+			wantMessage: "warning[0] does not match expected",
+		},
+		{
+			name: "Authorizer Test",
+			validatingPolicy: &admissionregv1.ValidatingAdmissionPolicy{
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Validations: []admissionregv1.Validation{
+						{Expression: `authorizer.group("").resource("pods").namespace("default").check("create").allowed()`},
+					},
+				},
+			},
+			testCase: MockTestCase{
+				Object:        validPod,
+				ExpectAllowed: true,
+				Authorizer: []AuthorizationMockConfig{
+					{
+						Group:     "",
+						Resource:  "pods",
+						Namespace: "default",
+						Verb:      "create",
+						Decision:  "allow",
+					},
+				},
+				UserInfo: &user.DefaultInfo{Name: "admin"},
+			},
+			wantPassed: true,
+		},
+		{
+			name: "Warning Expected But None Got",
+			validatingPolicy: &admissionregv1.ValidatingAdmissionPolicy{
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Validations: []admissionregv1.Validation{{Expression: "true"}},
+				},
+			},
+			testCase: MockTestCase{
+				Object:         validPod,
+				ExpectAllowed:  true,
+				ExpectWarnings: []string{"some warning"},
+			},
+			wantPassed:  false,
+			wantMessage: "expected warnings [some warning], got none",
+		},
+		{
+			name: "Warning Count Mismatch",
+			validatingPolicy: &admissionregv1.ValidatingAdmissionPolicy{
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Validations: []admissionregv1.Validation{
+						{Expression: "false", Message: "warn1"},
+						{Expression: "false", Message: "warn2"},
+					},
+				},
+			},
+			validatingBinding: &admissionregv1.ValidatingAdmissionPolicyBinding{
+				Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+					ValidationActions: []admissionregv1.ValidationAction{admissionregv1.Warn},
+				},
+			},
+			testCase: MockTestCase{
+				Object:         validPod,
+				ExpectAllowed:  true,
+				ExpectWarnings: []string{"warn1", "extra_warning"},
+			},
+			wantPassed:  false,
+			wantMessage: "expected 2 warnings, got 1",
+		},
+		{
+			name: "Mutating Policy Evaluation Error",
+			mutatingPolicy: &admissionv1beta1.MutatingAdmissionPolicy{
+				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionv1beta1.Mutation{
+						{
+							PatchType: admissionv1beta1.PatchTypeJSONPatch,
+							JSONPatch: &admissionv1beta1.JSONPatch{
+								Expression: `invalid_syntax(`, // Invalid CEL
+							},
+						},
+					},
+				},
+			},
+			testCase: MockTestCase{
+				Object:        validPod,
+				ExpectAllowed: true,
+			},
+			wantPassed:  false,
+			wantMessage: "evaluation error",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := evaluator.EvaluateTest(tc.mutatingPolicy, tc.validatingPolicy, tc.validatingBinding, tc.testCase)
+
+			if result.Passed != tc.wantPassed {
+				t.Errorf("EvaluateTest() Passed = %v, want %v. Message: %s", result.Passed, tc.wantPassed, result.Message)
+			}
+
+			if tc.wantMessage != "" {
+				if !tc.wantPassed && !strings.Contains(result.Message, tc.wantMessage) {
+					t.Errorf("EvaluateTest() Message = %q, want to contain %q", result.Message, tc.wantMessage)
+				}
 			}
 		})
 	}
