@@ -35,7 +35,7 @@ func TestEvaluateMutating_WithAuthorizer(t *testing.T) {
 			object: makePodObject("test-pod", "default"),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Allow("default", "pods", "create")
+				m.Allow("", "pods", "", "default", "create")
 
 				return m
 			}(),
@@ -51,7 +51,7 @@ func TestEvaluateMutating_WithAuthorizer(t *testing.T) {
 			object: makePodObject("test-pod", "default"),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Deny("default", "pods", "create")
+				m.Deny("", "pods", "", "default", "create")
 
 				return m
 			}(),
@@ -69,7 +69,7 @@ func TestEvaluateMutating_WithAuthorizer(t *testing.T) {
 			object: makePodWithAnnotations("test-pod", "default", map[string]any{}),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Allow("default", "pods", "delete")
+				m.Allow("", "pods", "", "default", "delete")
 
 				return m
 			}(),
@@ -211,7 +211,7 @@ func TestEvaluateValidating_WithAuthorizer(t *testing.T) {
 			object: makePodObject("test-pod", "default"),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Allow("default", "pods", "create")
+				m.Allow("", "pods", "", "default", "create")
 
 				return m
 			}(),
@@ -227,7 +227,7 @@ func TestEvaluateValidating_WithAuthorizer(t *testing.T) {
 			object: makePodObject("test-pod", "default"),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Deny("default", "pods", "create")
+				m.Deny("", "pods", "", "default", "create")
 
 				return m
 			}(),
@@ -245,7 +245,7 @@ func TestEvaluateValidating_WithAuthorizer(t *testing.T) {
 			object: makePodWithSpec("test-pod", "default", map[string]any{"hostNetwork": true}),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Allow("default", "pods", "deletecollection")
+				m.Allow("", "pods", "", "default", "deletecollection")
 
 				return m
 			}(),
@@ -262,7 +262,7 @@ func TestEvaluateValidating_WithAuthorizer(t *testing.T) {
 			object: makePodWithSpec("test-pod", "default", map[string]any{"hostNetwork": true}),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Deny("default", "pods", "deletecollection")
+				m.Deny("", "pods", "", "default", "deletecollection")
 
 				return m
 			}(),
@@ -280,7 +280,7 @@ func TestEvaluateValidating_WithAuthorizer(t *testing.T) {
 			object: makePodObject("privileged-pod", "default"),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Allow("default", "pods", "update")
+				m.Allow("", "pods", "", "default", "update")
 
 				return m
 			}(),
@@ -297,7 +297,7 @@ func TestEvaluateValidating_WithAuthorizer(t *testing.T) {
 			object: makePodObject("regular-pod", "default"),
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Deny("default", "pods", "update")
+				m.Deny("", "pods", "", "default", "update")
 
 				return m
 			}(),
@@ -327,8 +327,8 @@ func TestEvaluateValidating_WithAuthorizer(t *testing.T) {
 			},
 			authorizer: func() *MockAuthorizer {
 				m := NewMockAuthorizer()
-				m.Allow("default", "deployments", "update")
-				m.Allow("default", "deployments", "delete")
+				m.Allow("apps", "deployments", "", "default", "update")
+				m.Allow("apps", "deployments", "", "default", "delete")
 
 				return m
 			}(),

@@ -48,12 +48,14 @@ func NewMockAuthorizerFromConfig(configs []AuthorizationMockConfig) *MockAuthori
 	for _, c := range configs {
 		m.Add(c)
 	}
+
 	return m
 }
 
 // Add adds a decision to the mock authorizer.
 func (m *MockAuthorizer) Add(c AuthorizationMockConfig) {
 	key := fmt.Sprintf("%s/%s/%s/%s/%s", c.Group, c.Resource, c.Subresource, c.Namespace, c.Verb)
+
 	if c.Decision == "allow" {
 		m.decisions[key] = authorizer.DecisionAllow
 	} else {

@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/zemanlx/kat/internal/evaluator"
 	admissionv1 "k8s.io/api/admission/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +17,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/yaml"
+
+	"github.com/zemanlx/kat/internal/evaluator"
 )
 
 var (

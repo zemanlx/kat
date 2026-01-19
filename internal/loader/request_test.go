@@ -156,6 +156,7 @@ func TestValidateWithScheme(t *testing.T) {
 	}
 }
 
+//nolint:funlen // Table-driven test, length is expected
 func TestInferOperation(t *testing.T) {
 	t.Parallel()
 
@@ -210,14 +211,16 @@ func TestInferOperation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got, err := InferOperation(tt.hasObject, tt.hasOldObject, tt.requestOpStr)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("InferOperation() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
+
 			if got != tt.want {
 				t.Errorf("InferOperation() = %v, want %v", got, tt.want)
 			}

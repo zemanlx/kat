@@ -8,13 +8,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zemanlx/kat/internal/evaluator"
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apiserver/pkg/authentication/user"
+
+	"github.com/zemanlx/kat/internal/evaluator"
 )
 
 // TestSuite represents a policy directory with its policies, bindings, and test cases.
@@ -35,13 +36,13 @@ type TestCase struct {
 	PolicyName string
 
 	// Inputs for evaluation
-	Request       *admissionv1.AdmissionRequest
-	Object        *unstructured.Unstructured
-	OldObject     *unstructured.Unstructured
-	Params        *unstructured.Unstructured
-	NamespaceObj  *unstructured.Unstructured
-	UserInfo      user.Info
-	Authorizer    []evaluator.AuthorizationMockConfig
+	Request      *admissionv1.AdmissionRequest
+	Object       *unstructured.Unstructured
+	OldObject    *unstructured.Unstructured
+	Params       *unstructured.Unstructured
+	NamespaceObj *unstructured.Unstructured
+	UserInfo     user.Info
+	Authorizer   []evaluator.AuthorizationMockConfig
 
 	// Expected outcomes
 	ExpectAllowed          bool
@@ -54,19 +55,19 @@ type TestCase struct {
 }
 
 // Getter methods for TestCase to satisfy evaluator.TestCase interface.
-func (tc *TestCase) GetRequest() *admissionv1.AdmissionRequest     { return tc.Request }
-func (tc *TestCase) GetObject() *unstructured.Unstructured         { return tc.Object }
-func (tc *TestCase) GetOldObject() *unstructured.Unstructured      { return tc.OldObject }
-func (tc *TestCase) GetParams() *unstructured.Unstructured         { return tc.Params }
-func (tc *TestCase) GetNamespaceObj() *unstructured.Unstructured   { return tc.NamespaceObj }
-func (tc *TestCase) GetUserInfo() user.Info                        { return tc.UserInfo }
+func (tc *TestCase) GetRequest() *admissionv1.AdmissionRequest          { return tc.Request }
+func (tc *TestCase) GetObject() *unstructured.Unstructured              { return tc.Object }
+func (tc *TestCase) GetOldObject() *unstructured.Unstructured           { return tc.OldObject }
+func (tc *TestCase) GetParams() *unstructured.Unstructured              { return tc.Params }
+func (tc *TestCase) GetNamespaceObj() *unstructured.Unstructured        { return tc.NamespaceObj }
+func (tc *TestCase) GetUserInfo() user.Info                             { return tc.UserInfo }
 func (tc *TestCase) GetAuthorizer() []evaluator.AuthorizationMockConfig { return tc.Authorizer }
-func (tc *TestCase) GetExpectAllowed() bool                        { return tc.ExpectAllowed }
-func (tc *TestCase) GetExpectMessage() string                      { return tc.ExpectMessage }
-func (tc *TestCase) GetExpectWarnings() []string                   { return tc.ExpectWarnings }
-func (tc *TestCase) GetExpectAuditAnnotations() map[string]string  { return tc.ExpectAuditAnnotations }
-func (tc *TestCase) GetExpectedObject() *unstructured.Unstructured { return tc.ExpectedObject }
-func (tc *TestCase) GetError() error                               { return tc.Error }
+func (tc *TestCase) GetExpectAllowed() bool                             { return tc.ExpectAllowed }
+func (tc *TestCase) GetExpectMessage() string                           { return tc.ExpectMessage }
+func (tc *TestCase) GetExpectWarnings() []string                        { return tc.ExpectWarnings }
+func (tc *TestCase) GetExpectAuditAnnotations() map[string]string       { return tc.ExpectAuditAnnotations }
+func (tc *TestCase) GetExpectedObject() *unstructured.Unstructured      { return tc.ExpectedObject }
+func (tc *TestCase) GetError() error                                    { return tc.Error }
 
 // testRequest represents a test admission request with expected outcome (internal use only).
 type testRequest struct {
