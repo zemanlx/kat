@@ -64,7 +64,7 @@ func TestLoadTestSuite(t *testing.T) {
 	}{
 		{
 			name:           "add-default-labels",
-			dir:            filepath.Join("..", "..", "test-policies-pass", "add-default-labels"),
+			dir:            filepath.Join("..", "..", "test-policies-pass", "mutating", "add-default-labels"),
 			expectPolicies: true,
 			expectTests:    true,
 			minPolicies:    1,
@@ -72,7 +72,7 @@ func TestLoadTestSuite(t *testing.T) {
 		},
 		{
 			name:           "block-pod-exec",
-			dir:            filepath.Join("..", "..", "test-policies-pass", "block-pod-exec"),
+			dir:            filepath.Join("..", "..", "test-policies-pass", "validating", "block-pod-exec"),
 			expectPolicies: true,
 			expectTests:    true,
 			minPolicies:    1,

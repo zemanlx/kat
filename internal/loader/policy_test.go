@@ -65,7 +65,7 @@ func TestLoadPolicySet(t *testing.T) {
 		},
 		{
 			name:                   "real example sidecar-injection",
-			dir:                    "../../test-policies-pass/sidecar-injection",
+			dir:                    "../../test-policies-pass/mutating/sidecar-injection",
 			wantMutatingPolicies:   1,
 			wantMutatingBindings:   1,
 			wantValidatingPolicies: 0,
