@@ -1,5 +1,9 @@
 # kat - Kubernetes Admission Tester
 
+[![CI](https://github.com/zemanlx/kat/actions/workflows/ci.yml/badge.svg)](https://github.com/zemanlx/kat/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/zemanlx/kat)](https://goreportcard.com/report/github.com/zemanlx/kat)
+[![License](https://img.shields.io/github/license/zemanlx/kat)](https://github.com/zemanlx/kat/blob/main/LICENSE)
+
 `kat` is a lightweight, local testing tool for Kubernetes Admission Policies (ValidatingAdmissionPolicy and MutatingAdmissionPolicy). It allows you to write test cases using standard Kubernetes manifests and verify your policies' behavior without needing a running cluster.
 
 ## Features
