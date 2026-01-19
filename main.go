@@ -117,15 +117,16 @@ func configureReporter(rep *reporter.Reporter, cfg *config) {
 }
 
 func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.TestSuite) error {
-	rep.StartSuite(suite.Name)
+	suiteRep := rep.StartSuite(suite.Name)
+	defer suiteRep.End()
 
 	for _, test := range suite.Tests {
-		rep.StartTest(suite.Name, test.Name)
+		suiteRep.StartTest(test.Name)
 
 		mutatingPolicy, validatingPolicy, validatingBinding := findPolicies(suite, test.PolicyName)
 
 		if mutatingPolicy == nil && validatingPolicy == nil {
-			rep.ReportFail(suite.Name, test.Name, fmt.Sprintf("policy %q not found", test.PolicyName))
+			suiteRep.ReportFail(test.Name, fmt.Sprintf("policy %q not found", test.PolicyName))
 
 			continue
 		}
@@ -133,7 +134,7 @@ func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.T
 		// Evaluate test
 		result := eval.EvaluateTest(mutatingPolicy, validatingPolicy, validatingBinding, test)
 
-		rep.ReportResult(suite.Name, test.Name, result)
+		suiteRep.ReportResult(test.Name, result)
 	}
 
 	return nil

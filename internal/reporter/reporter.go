@@ -30,19 +30,12 @@ type Reporter struct {
 
 	format OutputFormat
 
+	// Global stats
 	totalTests  int
 	passedTests int
 	failedTests int
 
 	startTime time.Time
-	testStart time.Time // Track individual test start time
-
-	// Suite-level tracking
-	currentSuite      string
-	suiteStartTime    time.Time
-	suitePassedTests  int
-	suiteFailedTests  int
-	suiteFirstFailure bool // Track if this is first failure in non-verbose mode
 }
 
 var errTestsFailed = errors.New("tests failed")
@@ -74,30 +67,38 @@ type TestEvent struct {
 // emitJSON writes a JSON test event.
 func (r *Reporter) emitJSON(event TestEvent) {
 	event.Time = time.Now()
-
-	data, err := json.Marshal(event)
-	if err != nil {
-		// Should never happen for our simple structs, but handle gracefully
-		fmt.Fprintf(r.out, "{\"Action\":\"error\",\"Test\":\"%s\",\"Package\":\"%s\",\"Output\":\"%v\"}\n", event.Test, event.Package, err)
-
-		return
+	// Use json.Encoder to safely encode (and defaults to HTML escaping,
+	// though not strictly required for CLI logs, it's safer).
+	// It automatically adds a newline.
+	if err := json.NewEncoder(r.out).Encode(event); err != nil {
+		fmt.Fprintf(r.out, "{\"Action\":\"error\",\"Test\":\"%s\",\"Package\":\"%s\",\"Output\":\"json error: %v\"}\n", event.Test, event.Package, err)
 	}
+}
 
-	fmt.Fprintf(r.out, "%s\n", data)
+// SuiteReporter handles reporting for a specific test suite.
+type SuiteReporter struct {
+	rep  *Reporter
+	name string
+
+	startTime   time.Time
+	passedTests int
+	failedTests int
+
+	// testStart tracks the start time of the current test.
+	// Only valid during a test execution.
+	testStart time.Time
+
+	firstFailure bool // Track if this is first failure in non-verbose mode
 }
 
 // StartSuite reports the start of a test suite.
-func (r *Reporter) StartSuite(suiteName string) {
-	// Report previous suite if exists
-	if r.currentSuite != "" {
-		r.endSuite()
+func (r *Reporter) StartSuite(suiteName string) *SuiteReporter {
+	sr := &SuiteReporter{
+		rep:          r,
+		name:         suiteName,
+		startTime:    time.Now(),
+		firstFailure: true,
 	}
-
-	r.currentSuite = suiteName
-	r.suiteStartTime = time.Now()
-	r.suitePassedTests = 0
-	r.suiteFailedTests = 0
-	r.suiteFirstFailure = true
 
 	switch r.format {
 	case FormatVerbose:
@@ -109,156 +110,143 @@ func (r *Reporter) StartSuite(suiteName string) {
 		})
 	case FormatDefault:
 		// Default format doesn't output suite start
-		break
 	}
+
+	return sr
 }
 
 // StartTest reports the start of an individual test.
-func (r *Reporter) StartTest(suiteName, testName string) {
-	r.totalTests++
-	r.testStart = time.Now()
+func (s *SuiteReporter) StartTest(testName string) {
+	s.rep.totalTests++
+	s.testStart = time.Now()
 
-	switch r.format {
+	switch s.rep.format {
 	case FormatVerbose:
-		fmt.Fprintf(r.out, "=== RUN   %s/%s\n", suiteName, testName)
+		fmt.Fprintf(s.rep.out, "=== RUN   %s/%s\n", s.name, testName)
 	case FormatJSON:
-		r.emitJSON(TestEvent{
+		s.rep.emitJSON(TestEvent{
 			Action:  "run",
-			Package: suiteName,
+			Package: s.name,
 			Test:    testName,
 		})
 	case FormatDefault:
 		// Default format doesn't output test start
-		break
 	}
 }
 
 // ReportPass reports a passing test.
-func (r *Reporter) ReportPass(suiteName, testName string) {
-	r.passedTests++
-	r.suitePassedTests++
-	elapsed := time.Since(r.testStart).Seconds()
+func (s *SuiteReporter) ReportPass(testName string) {
+	s.rep.passedTests++
+	s.passedTests++
+	elapsed := time.Since(s.testStart).Seconds()
 
-	switch r.format {
+	switch s.rep.format {
 	case FormatVerbose:
-		fmt.Fprintf(r.out, "--- PASS: %s/%s (%.2fs)\n", suiteName, testName, elapsed)
+		fmt.Fprintf(s.rep.out, "--- PASS: %s/%s (%.2fs)\n", s.name, testName, elapsed)
 	case FormatJSON:
-		r.emitJSON(TestEvent{
+		s.rep.emitJSON(TestEvent{
 			Action:  "pass",
-			Package: suiteName,
+			Package: s.name,
 			Test:    testName,
 			Elapsed: elapsed,
 		})
 	case FormatDefault:
 		// Default format doesn't output individual test passes
-		break
 	}
 }
 
 // ReportFail reports a failing test with a message.
-func (r *Reporter) ReportFail(suiteName, testName, message string) {
-	r.failedTests++
-	r.suiteFailedTests++
-	elapsed := time.Since(r.testStart).Seconds()
+func (s *SuiteReporter) ReportFail(testName, message string) {
+	s.rep.failedTests++
+	s.failedTests++
+	elapsed := time.Since(s.testStart).Seconds()
 
 	// Trim trailing whitespace to prevent extra empty lines in output
 	message = strings.TrimRightFunc(message, unicode.IsSpace)
 
-	switch r.format {
+	switch s.rep.format {
 	case FormatVerbose:
-		fmt.Fprintf(r.out, "--- FAIL: %s/%s (%.2fs)\n", suiteName, testName, elapsed)
-		r.printIndented(message)
+		fmt.Fprintf(s.rep.out, "--- FAIL: %s/%s (%.2fs)\n", s.name, testName, elapsed)
+		s.printIndented(message)
 	case FormatJSON:
-		r.emitJSON(TestEvent{
+		s.rep.emitJSON(TestEvent{
 			Action:  "output",
-			Package: suiteName,
+			Package: s.name,
 			Test:    testName,
 			Output:  message + "\n",
 		})
-		r.emitJSON(TestEvent{
+		s.rep.emitJSON(TestEvent{
 			Action:  "fail",
-			Package: suiteName,
+			Package: s.name,
 			Test:    testName,
 			Elapsed: elapsed,
 		})
 	case FormatDefault:
 		// Only show failures in default mode
-		if r.suiteFirstFailure {
-			r.suiteFirstFailure = false
-			fmt.Fprintf(r.out, "\n")
+		if s.firstFailure {
+			s.firstFailure = false
+			fmt.Fprintf(s.rep.out, "\n")
 		}
 
-		fmt.Fprintf(r.out, "--- FAIL: %s/%s (%.2fs)\n", suiteName, testName, elapsed)
-		r.printIndented(message)
+		fmt.Fprintf(s.rep.out, "--- FAIL: %s/%s (%.2fs)\n", s.name, testName, elapsed)
+		s.printIndented(message)
 	}
 }
 
-func (r *Reporter) printIndented(message string) {
+func (s *SuiteReporter) printIndented(message string) {
 	lines := strings.Split(message, "\n")
 	for _, line := range lines {
 		if line == "" {
-			fmt.Fprintln(r.out)
+			fmt.Fprintln(s.rep.out)
 		} else {
-			fmt.Fprintf(r.out, "    %s\n", line)
+			fmt.Fprintf(s.rep.out, "    %s\n", line)
 		}
 	}
 }
 
 // ReportResult reports a test result from the evaluator.
-func (r *Reporter) ReportResult(suiteName, testName string, result *evaluator.TestResult) {
+func (s *SuiteReporter) ReportResult(testName string, result *evaluator.TestResult) {
 	if result.Passed {
-		r.ReportPass(suiteName, testName)
+		s.ReportPass(testName)
 	} else {
-		r.ReportFail(suiteName, testName, result.Message)
+		s.ReportFail(testName, result.Message)
 	}
 }
 
-// endSuite reports the end of a test suite.
-func (r *Reporter) endSuite() {
-	if r.currentSuite == "" {
-		return
-	}
+// End reports the end of a test suite.
+func (s *SuiteReporter) End() {
+	elapsed := time.Since(s.startTime).Seconds()
 
-	elapsed := time.Since(r.suiteStartTime).Seconds()
-
-	switch r.format {
+	switch s.rep.format {
 	case FormatDefault:
 		// In non-verbose mode, print ok/FAIL line for each suite
-		if r.suiteFailedTests > 0 {
-			fmt.Fprintf(r.out, "FAIL\t%s\t%.3fs\n", r.currentSuite, elapsed)
+		if s.failedTests > 0 {
+			fmt.Fprintf(s.rep.out, "FAIL\t%s\t%.3fs\n", s.name, elapsed)
 		} else {
-			fmt.Fprintf(r.out, "ok  \t%s\t%.3fs\n", r.currentSuite, elapsed)
+			fmt.Fprintf(s.rep.out, "ok  \t%s\t%.3fs\n", s.name, elapsed)
 		}
 	case FormatJSON:
 		// JSON mode emits package-level result
-		if r.suiteFailedTests > 0 {
-			r.emitJSON(TestEvent{
+		if s.failedTests > 0 {
+			s.rep.emitJSON(TestEvent{
 				Action:  "fail",
-				Package: r.currentSuite,
+				Package: s.name,
 				Elapsed: elapsed,
 			})
 		} else {
-			r.emitJSON(TestEvent{
+			s.rep.emitJSON(TestEvent{
 				Action:  "pass",
-				Package: r.currentSuite,
+				Package: s.name,
 				Elapsed: elapsed,
 			})
 		}
 	case FormatVerbose:
 		// Verbose mode doesn't output suite-level lines
-		break
 	}
-
-	r.currentSuite = ""
 }
 
 // Summary prints the final test summary and returns an error if tests failed.
 func (r *Reporter) Summary() error {
-	// End the last suite if there is one
-	if r.currentSuite != "" {
-		r.endSuite()
-	}
-
 	elapsed := time.Since(r.startTime).Seconds()
 
 	switch r.format {
@@ -276,7 +264,7 @@ func (r *Reporter) Summary() error {
 			})
 		}
 	case FormatVerbose:
-		// Summary only in default and verbose modes (after suite lines)
+		// Summary only in default and verbose modes
 		if r.failedTests > 0 {
 			fmt.Fprintf(r.out, "FAIL\n")
 		} else {
@@ -284,7 +272,6 @@ func (r *Reporter) Summary() error {
 		}
 	case FormatDefault:
 		// Default mode summary handled above/inline
-		break
 	}
 
 	if r.failedTests > 0 {

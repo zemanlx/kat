@@ -31,7 +31,8 @@ func TestReporter_StartTest(t *testing.T) {
 	rep := New(buf)
 	rep.SetFormat(FormatVerbose)
 
-	rep.StartTest("suite", "test")
+	s := rep.StartSuite("suite")
+	s.StartTest("test")
 
 	output := buf.String()
 	if !strings.Contains(output, "=== RUN   suite/test") {
@@ -51,8 +52,9 @@ func TestReporter_ReportPass(t *testing.T) {
 	rep := New(buf)
 	rep.SetFormat(FormatVerbose)
 
-	rep.StartTest("suite", "test")
-	rep.ReportPass("suite", "test")
+	s := rep.StartSuite("suite")
+	s.StartTest("test")
+	s.ReportPass("test")
 
 	output := buf.String()
 	if !strings.Contains(output, "--- PASS: suite/test") {
@@ -71,8 +73,9 @@ func TestReporter_ReportFail(t *testing.T) {
 	buf := &bytes.Buffer{}
 	rep := New(buf)
 
-	rep.StartTest("suite", "test")
-	rep.ReportFail("suite", "test", "something went wrong")
+	s := rep.StartSuite("suite")
+	s.StartTest("test")
+	s.ReportFail("test", "something went wrong")
 
 	output := buf.String()
 	if !strings.Contains(output, "--- FAIL: suite/test") {
@@ -96,12 +99,13 @@ func TestReporter_ReportResult_Pass(t *testing.T) {
 	rep := New(buf)
 	rep.SetFormat(FormatVerbose)
 
-	rep.StartTest("suite", "test")
+	s := rep.StartSuite("suite")
+	s.StartTest("test")
 
 	result := &evaluator.TestResult{
 		Passed: true,
 	}
-	rep.ReportResult("suite", "test", result)
+	s.ReportResult("test", result)
 
 	output := buf.String()
 	if !strings.Contains(output, "--- PASS: suite/test") {
@@ -120,13 +124,14 @@ func TestReporter_ReportResult_Fail(t *testing.T) {
 	buf := &bytes.Buffer{}
 	rep := New(buf)
 
-	rep.StartTest("suite", "test")
+	s := rep.StartSuite("suite")
+	s.StartTest("test")
 
 	result := &evaluator.TestResult{
 		Passed:  false,
 		Message: "validation failed",
 	}
-	rep.ReportResult("suite", "test", result)
+	s.ReportResult("test", result)
 
 	output := buf.String()
 	if !strings.Contains(output, "--- FAIL: suite/test") {
@@ -150,10 +155,12 @@ func TestReporter_Summary_AllPass(t *testing.T) {
 	rep := New(buf)
 	rep.SetFormat(FormatVerbose)
 
-	rep.StartTest("suite", "test1")
-	rep.ReportPass("suite", "test1")
-	rep.StartTest("suite", "test2")
-	rep.ReportPass("suite", "test2")
+	s := rep.StartSuite("suite")
+	s.StartTest("test1")
+	s.ReportPass("test1")
+	s.StartTest("test2")
+	s.ReportPass("test2")
+	s.End()
 
 	err := rep.Summary()
 	if err != nil {
@@ -178,10 +185,12 @@ func TestReporter_Summary_WithFailures(t *testing.T) {
 	rep := New(buf)
 	rep.SetFormat(FormatVerbose)
 
-	rep.StartTest("suite", "test1")
-	rep.ReportPass("suite", "test1")
-	rep.StartTest("suite", "test2")
-	rep.ReportFail("suite", "test2", "failed")
+	s := rep.StartSuite("suite")
+	s.StartTest("test1")
+	s.ReportPass("test1")
+	s.StartTest("test2")
+	s.ReportFail("test2", "failed")
+	s.End()
 
 	err := rep.Summary()
 	if err == nil {
