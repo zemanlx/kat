@@ -1,0 +1,6 @@
+userInfo:
+  username: system:serviceaccount:team-core-infrastructure-ci:deployer
+  groups:
+    - system:serviceaccounts
+    - system:serviceaccounts:team-core-infrastructure-ci
+    - system:authenticated

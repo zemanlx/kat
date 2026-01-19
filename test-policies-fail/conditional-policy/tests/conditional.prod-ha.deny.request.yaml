@@ -1,0 +1,8 @@
+namespace: production
+namespaceObject:
+  apiVersion: v1
+  kind: Name # this should be Namespace
+  metadata:
+    name: production
+    labels:
+      environment: prod

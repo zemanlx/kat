@@ -1,0 +1,2 @@
+All workloads must have an 'owner' label
+

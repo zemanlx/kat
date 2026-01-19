@@ -1,0 +1,9 @@
+namespace: production
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: production
+    labels:
+      environment: prod
+

@@ -1,0 +1,2 @@
+Service account system:serviceaccount:team-platform-ci:deployer is not allowed to perform this operation
+

@@ -1,0 +1,19 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: test-policy-1
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE"]
+      resources: ["pods"]
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: test-binding-1
+spec:
+  policyName: test-policy-1

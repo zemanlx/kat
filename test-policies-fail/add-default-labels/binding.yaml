@@ -1,0 +1,7 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: add-default-labels-binding
+spec:
+  policyName: add-default-labels
+

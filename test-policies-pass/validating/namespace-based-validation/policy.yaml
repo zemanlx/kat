@@ -1,0 +1,21 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: namespace-based-validation
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["deployments"]
+  validations:
+  - expression: |
+      !has(namespaceObject.metadata.labels) ||
+      !has(namespaceObject.metadata.labels.environment) ||
+      namespaceObject.metadata.labels.environment != 'prod' ||
+      object.spec.replicas >= 2
+    message: "Production deployments must have at least 2 replicas for high availability"
+    reason: Invalid
+

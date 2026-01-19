@@ -1,0 +1,11 @@
+{
+  "operation": "CREATE",
+  "name": "obj-pod",
+  "namespace": "obj-ns",
+  "uid": "obj-uid",
+  "subResource": "",
+  "dryRun": false,
+  "kind": { "group": "", "version": "v1", "kind": "Pod" },
+  "resource": { "group": "", "version": "v1", "resource": "pods" },
+  "userInfo": { "username": "", "groups": [] }
+}

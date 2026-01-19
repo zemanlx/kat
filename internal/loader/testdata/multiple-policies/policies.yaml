@@ -1,0 +1,13 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: policy-a
+spec:
+  failurePolicy: Fail
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: policy-b
+spec:
+  failurePolicy: Ignore

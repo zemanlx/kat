@@ -1,0 +1,6 @@
+name: req-pod
+namespace: req-ns
+uid: req-uid
+userInfo:
+  username: alice
+  groups: ["devs", "admins"]

@@ -1,0 +1,17 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: deprecated-api-warn
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["apps"]
+      apiVersions: ["v1beta1", "v1beta2"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["deployments"]
+  validations:
+  - expression: "false"
+    messageExpression: "'Using deprecated API version ' + object.apiVersion + '. Please migrate to apps/v1'"
+    reason: Invalid
+

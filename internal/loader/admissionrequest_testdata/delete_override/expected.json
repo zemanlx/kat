@@ -1,0 +1,11 @@
+{
+  "operation": "DELETE",
+  "name": "override-ns",
+  "namespace": "",
+  "uid": "test-uid",
+  "subResource": "",
+  "dryRun": false,
+  "kind": { "group": "", "version": "v1", "kind": "Namespace" },
+  "resource": { "group": "", "version": "v1", "resource": "namespaces" },
+  "userInfo": { "username": "", "groups": [] }
+}

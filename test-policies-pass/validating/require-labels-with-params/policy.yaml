@@ -1,0 +1,25 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: require-labels-with-params
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["deployments", "statefulsets"]
+  validations:
+  - expression: "params != null"
+    message: "params missing but required to bind to this policy"
+  - expression: |
+      params.data.requiredLabels.split(',').all(label,
+        has(object.metadata.labels) && label in object.metadata.labels
+      )
+    messageExpression: "'Missing required labels: ' + params.data.requiredLabels"
+    reason: Invalid
+

@@ -1,0 +1,16 @@
+ok  	add-default-labels	0.000s
+ok  	mutating-with-binding	0.000s
+ok  	sidecar-injection	0.000s
+ok  	block-pod-exec	0.000s
+ok  	block-privileged-containers	0.000s
+ok  	block-team-ci-service-accounts	0.000s
+ok  	conditional-policy	0.000s
+ok  	delete-protection	0.000s
+ok  	deprecated-api-warn	0.000s
+ok  	namespace-based-validation	0.000s
+ok  	prevent-owner-change	0.000s
+ok  	replica-limit	0.000s
+ok  	replica-limit-with-params	0.000s
+ok  	require-labels-with-params	0.000s
+ok  	require-owner-label	0.000s
+ok  	track-privileged-audit	0.000s

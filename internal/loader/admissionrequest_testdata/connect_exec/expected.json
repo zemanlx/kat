@@ -1,0 +1,11 @@
+{
+  "operation": "CONNECT",
+  "name": "app-pod",
+  "namespace": "production",
+  "uid": "test-uid",
+  "subResource": "exec",
+  "dryRun": false,
+  "kind": {"group": "", "version": "", "kind": ""},
+  "resource": {"group": "", "version": "", "resource": ""},
+  "userInfo": {"username": "user@example.com", "groups": []}
+}

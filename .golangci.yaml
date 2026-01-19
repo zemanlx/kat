@@ -1,0 +1,25 @@
+# GolangCI-Lint configuration (v2 style)
+# Docs: https://golangci-lint.run/usage/configuration/
+
+run:
+  tests: true
+  timeout: 5m
+
+linters:
+  enable-all: true
+  disable:
+    - varnamelen
+    - testpackage
+    - lll
+    - depguard
+    - tenv
+    - nonamedreturns
+    - exhaustruct
+    - ireturn
+
+linters-settings:
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(github.com/zemanlx)

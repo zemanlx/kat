@@ -1,0 +1,9 @@
+namespace: development
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: development
+    labels:
+      environment: dev
+

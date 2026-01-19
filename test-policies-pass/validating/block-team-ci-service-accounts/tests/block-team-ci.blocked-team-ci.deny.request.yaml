@@ -1,0 +1,7 @@
+userInfo:
+  username: system:serviceaccount:team-platform-ci:deployer
+  groups:
+  - system:serviceaccounts
+  - system:serviceaccounts:team-platform-ci
+  - system:authenticated
+

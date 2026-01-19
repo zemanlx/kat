@@ -1,0 +1,2 @@
+Replica count 15 exceeds maximum of 10
+

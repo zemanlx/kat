@@ -1,0 +1,8 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: deprecated-api-warn-binding
+spec:
+  policyName: deprecated-api-warn
+  validationActions: [Warn]
+

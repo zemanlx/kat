@@ -1,0 +1,13 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: binding-a
+spec:
+  policyName: policy-a
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: binding-b
+spec:
+  policyName: policy-b

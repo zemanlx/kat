@@ -1,0 +1,11 @@
+{
+  "operation": "UPDATE",
+  "name": "req-dep",
+  "namespace": "req-ns",
+  "uid": "test-uid",
+  "subResource": "",
+  "dryRun": false,
+  "kind": { "group": "apps", "version": "v1", "kind": "Deployment" },
+  "resource": { "group": "apps", "version": "v1", "resource": "deployments" },
+  "userInfo": { "username": "", "groups": [] }
+}

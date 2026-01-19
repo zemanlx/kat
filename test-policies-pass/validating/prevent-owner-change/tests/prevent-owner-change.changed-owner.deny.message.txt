@@ -1,0 +1,2 @@
+Cannot change owner from platform-team to security-team
+

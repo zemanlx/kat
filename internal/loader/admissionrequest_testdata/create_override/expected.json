@@ -1,0 +1,11 @@
+{
+  "operation": "CREATE",
+  "name": "req-pod",
+  "namespace": "req-ns",
+  "uid": "req-uid",
+  "subResource": "",
+  "dryRun": false,
+  "kind": { "group": "", "version": "v1", "kind": "Pod" },
+  "resource": { "group": "", "version": "v1", "resource": "pods" },
+  "userInfo": { "username": "alice", "groups": ["devs", "admins"] }
+}

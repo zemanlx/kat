@@ -1,0 +1,2 @@
+high-privilege-pod: "Pod privileged-pod has privileged container: api"
+fail: true

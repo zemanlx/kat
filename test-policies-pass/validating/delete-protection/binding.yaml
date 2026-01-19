@@ -1,0 +1,8 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: delete-protection-binding
+spec:
+  policyName: delete-protection
+  validationActions: [Deny]
+

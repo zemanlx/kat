@@ -1,0 +1,90 @@
+
+--- FAIL: add-default-labels/add-default-labels.no-labels.yaml (0.00s)
+    mutated object does not match expected:
+    --- Expected
+    +++ Actual
+    @@ -2,7 +2,7 @@
+     kind: Deployment
+     metadata:
+         labels:
+    -        environment: dev
+    +        environment: development
+         name: test-deployment
+     spec:
+         replicas: 1
+FAIL	add-default-labels	0.000s
+
+--- FAIL: block-pod-exec/block-pod-exec.prod-admin.allow.yaml (0.00s)
+    expected allowed=true, got allowed=false
+--- FAIL: block-pod-exec/block-pod-exec.prod-non-admin.deny.yaml (0.00s)
+    expected allowed=false, got allowed=true
+FAIL	block-pod-exec	0.000s
+
+--- FAIL: block-team-ci-service-accounts/block-team-ci.allowed-core-infra.allow.yaml (0.00s)
+    expected allowed=true, got allowed=false
+--- FAIL: block-team-ci-service-accounts/block-team-ci.blocked-team-ci.deny.yaml (0.00s)
+    message does not match expected:
+    --- Expected
+    +++ Actual
+    @@ -1 +1 @@
+    -Service account system:serviceaccount:team-platform-ci:deployer is not allowed to perform this operation.
+    +Service account system:serviceaccount:team-platform-ci:deployer is not allowed to perform this operation
+FAIL	block-team-ci-service-accounts	0.000s
+
+--- FAIL: conditional-policy/conditional.dev-single-replica.allow.yaml (0.00s)
+    expected allowed=true, got allowed=false
+--- FAIL: conditional-policy/conditional.prod-ha.deny.yaml (0.00s)
+    test loading error: failed to parse test file test-policies-fail/conditional-policy/tests/conditional.prod-ha.deny.object.yaml: object: invalid kubernetes object: strict decoding error: unknown field "spec.template.spec.container"
+FAIL	conditional-policy	0.000s
+
+--- FAIL: deprecated-api-warn/deprecated-api.old-version.warn.yaml (0.00s)
+    warning[0] does not match expected:
+    --- Expected
+    +++ Actual
+    @@ -1 +1 @@
+    -Using deprecated API version apps/v1beta1. Please migrate to apps/v1.
+    +Using deprecated API version apps/v1beta1. Please migrate to apps/v1
+FAIL	deprecated-api-warn	0.000s
+
+--- FAIL: mutating-with-binding/add-label.allowed.yaml (0.00s)
+    mutated object does not match expected:
+    --- Expected
+    +++ Actual
+    @@ -3,7 +3,7 @@
+     metadata:
+         labels:
+             app: test
+    -        managed-by: kat-test-fail
+    +        managed-by: kat-test
+         name: test-pod
+         namespace: default
+     spec:
+--- FAIL: mutating-with-binding/no-params.allowed.yaml (0.00s)
+    mutated object does not match expected:
+    --- Expected
+    +++ Actual
+    @@ -3,7 +3,6 @@
+     metadata:
+         labels:
+             app: test
+    -        managed-by: kat-test
+         name: test-pod-no-params
+         namespace: default
+     spec:
+FAIL	mutating-with-binding	0.000s
+
+--- FAIL: prevent-owner-change/prevent-owner-change.changed-owner.deny.yaml (0.00s)
+    expected allowed=false, got allowed=true
+--- FAIL: prevent-owner-change/prevent-owner-change.same-owner.allow.yaml (0.00s)
+    expected allowed=true, got allowed=false
+FAIL	prevent-owner-change	0.000s
+
+--- FAIL: track-privileged-audit/track-privileged.privileged-pod.audit.yaml (0.00s)
+    audit annotations do not match expected:
+    --- Expected
+    +++ Actual
+    @@ -1,3 +1,2 @@
+    -fail: "true"
+    -high-privilege-pod: 'Pod privileged-pod has privileged container: api'
+    +high-privilege-pod: 'Pod privileged-pod has privileged container: app'
+FAIL	track-privileged-audit	0.000s

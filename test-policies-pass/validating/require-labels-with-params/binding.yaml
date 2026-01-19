@@ -1,0 +1,12 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-labels-with-params-binding
+spec:
+  policyName: require-labels-with-params
+  validationActions: [Deny]
+  paramRef:
+    name: label-config
+    namespace: default
+    parameterNotFoundAction: Deny
+

@@ -1,0 +1,21 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: add-label-from-params
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |
+          params != null && has(params.data) && has(params.data.labelKey) && has(params.data.labelValue) ?
+          [JSONPatch{op: "add", path: "/metadata/labels/" + params.data.labelKey, value: params.data.labelValue}] : []

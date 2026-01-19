@@ -1,0 +1,20 @@
+operation: CONNECT
+subResource: exec
+name: app-pod
+namespace: production
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: production
+    labels:
+      environment: production
+userInfo:
+  username: "user@example.com"
+  groups: ["system:authenticated"]
+options:
+  container: app
+  command: ["sh", "-c", "echo hello"]
+  stdin: false
+  stdout: true
+  tty: false

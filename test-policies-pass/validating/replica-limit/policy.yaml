@@ -1,0 +1,17 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: replica-limit
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["deployments", "statefulsets"]
+  validations:
+  - expression: "object.spec.replicas <= 10"
+    messageExpression: "'Replica count ' + string(object.spec.replicas) + ' exceeds maximum of 10'"
+    reason: Invalid
+

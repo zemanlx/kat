@@ -1,0 +1,13 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: block-pod-exec
+spec:
+  validations:
+    - expression: |
+        request.operation != 'CONNECT' ||
+        request.subResource != 'exec' ||
+        !has(namespaceObject.metadata.labels) ||
+        namespaceObject.metadata.labels['environment'] != 'production' ||
+        (has(request.userInfo.groups) && 'cluster-admins' in request.userInfo.groups)
+      message: "kubectl exec to production pods requires cluster-admins"

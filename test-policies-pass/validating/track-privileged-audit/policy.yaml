@@ -1,0 +1,36 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: track-privileged-audit
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["pods"]
+  validations:
+  - expression: |
+      !has(object.spec.containers) ||
+      object.spec.containers.all(container,
+        !has(container.securityContext) ||
+        !has(container.securityContext.privileged) ||
+        container.securityContext.privileged == false
+      )
+    messageExpression: "'Privileged container detected: ' + object.spec.containers.filter(container, has(container.securityContext) && has(container.securityContext.privileged) && container.securityContext.privileged == true)[0].name"
+    reason: Warn
+  auditAnnotations:
+  - key: "high-privilege-pod"
+    valueExpression: |
+      has(object.spec.containers) && object.spec.containers.exists(container,
+        has(container.securityContext) &&
+        has(container.securityContext.privileged) &&
+        container.securityContext.privileged == true
+      ) ? 'Pod ' + object.metadata.name + ' has privileged container: ' +
+          object.spec.containers.filter(container,
+            has(container.securityContext) &&
+            has(container.securityContext.privileged) &&
+            container.securityContext.privileged == true
+          )[0].name : ''
+

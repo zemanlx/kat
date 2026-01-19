@@ -1,0 +1,27 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: mutating-policy
+spec:
+  failurePolicy: Fail
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: validating-policy
+spec:
+  failurePolicy: Fail
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: mutating-binding
+spec:
+  policyName: mutating-policy
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: validating-binding
+spec:
+  policyName: validating-policy

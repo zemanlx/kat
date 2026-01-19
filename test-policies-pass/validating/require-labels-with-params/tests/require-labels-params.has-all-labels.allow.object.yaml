@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliant-deployment
+  labels:
+    owner: platform-team
+    team: core-infra
+    environment: prod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+

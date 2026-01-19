@@ -1,0 +1,6 @@
+operation: CONNECT
+subResource: exec
+name: app-pod
+namespace: production
+userInfo:
+  username: user@example.com

@@ -1,0 +1,37 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: block-privileged-containers
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["pods"]
+    - apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["deployments", "statefulsets", "daemonsets"]
+  validations:
+  - expression: |
+      !has(object.spec.containers) ||
+      object.spec.containers.all(container,
+        !has(container.securityContext) ||
+        !has(container.securityContext.privileged) ||
+        container.securityContext.privileged == false
+      )
+    message: "Privileged containers are not allowed"
+    reason: Forbidden
+  - expression: |
+      !has(object.spec.template) ||
+      !has(object.spec.template.spec.containers) ||
+      object.spec.template.spec.containers.all(container,
+        !has(container.securityContext) ||
+        !has(container.securityContext.privileged) ||
+        container.securityContext.privileged == false
+      )
+    message: "Privileged containers are not allowed"
+    reason: Forbidden
+

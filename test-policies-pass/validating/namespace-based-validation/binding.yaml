@@ -1,0 +1,8 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: namespace-based-validation-binding
+spec:
+  policyName: namespace-based-validation
+  validationActions: [Deny]
+
