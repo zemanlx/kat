@@ -25,6 +25,16 @@ type MockAuthorizer struct {
 	decisions map[string]authorizer.Decision
 }
 
+// AuthorizationMockConfig represents a mocked authorization decision configuration.
+type AuthorizationMockConfig struct {
+	Group       string `json:"group,omitempty"`
+	Resource    string `json:"resource"`
+	Subresource string `json:"subresource,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	Verb        string `json:"verb"`
+	Decision    string `json:"decision"` // "allow" or "deny"
+}
+
 // NewMockAuthorizer creates a new mock authorizer.
 func NewMockAuthorizer() *MockAuthorizer {
 	return &MockAuthorizer{
@@ -32,28 +42,46 @@ func NewMockAuthorizer() *MockAuthorizer {
 	}
 }
 
+// NewMockAuthorizerFromConfig creates a mock authorizer from a list of configs.
+func NewMockAuthorizerFromConfig(configs []AuthorizationMockConfig) *MockAuthorizer {
+	m := NewMockAuthorizer()
+	for _, c := range configs {
+		m.Add(c)
+	}
+	return m
+}
+
+// Add adds a decision to the mock authorizer.
+func (m *MockAuthorizer) Add(c AuthorizationMockConfig) {
+	key := fmt.Sprintf("%s/%s/%s/%s/%s", c.Group, c.Resource, c.Subresource, c.Namespace, c.Verb)
+	if c.Decision == "allow" {
+		m.decisions[key] = authorizer.DecisionAllow
+	} else {
+		m.decisions[key] = authorizer.DecisionDeny
+	}
+}
+
 // Allow configures the mock to allow a specific request.
-func (m *MockAuthorizer) Allow(namespace, resource, verb string) {
-	key := fmt.Sprintf("%s/%s/%s", namespace, resource, verb)
+func (m *MockAuthorizer) Allow(group, resource, subresource, namespace, verb string) {
+	key := fmt.Sprintf("%s/%s/%s/%s/%s", group, resource, subresource, namespace, verb)
 	m.decisions[key] = authorizer.DecisionAllow
 }
 
 // Deny configures the mock to deny a specific request.
-func (m *MockAuthorizer) Deny(namespace, resource, verb string) {
-	key := fmt.Sprintf("%s/%s/%s", namespace, resource, verb)
+func (m *MockAuthorizer) Deny(group, resource, subresource, namespace, verb string) {
+	key := fmt.Sprintf("%s/%s/%s/%s/%s", group, resource, subresource, namespace, verb)
 	m.decisions[key] = authorizer.DecisionDeny
 }
 
 // Authorize implements the authorizer.Authorizer interface.
 func (m *MockAuthorizer) Authorize(_ context.Context, attrs authorizer.Attributes) (authorizer.Decision, string, error) {
-	key := fmt.Sprintf("%s/%s/%s", attrs.GetNamespace(), attrs.GetResource(), attrs.GetVerb())
+	// Try specific match
+	key := fmt.Sprintf("%s/%s/%s/%s/%s", attrs.GetAPIGroup(), attrs.GetResource(), attrs.GetSubresource(), attrs.GetNamespace(), attrs.GetVerb())
 	if decision, ok := m.decisions[key]; ok {
-		if decision == authorizer.DecisionAllow {
-			return decision, "allowed by mock", nil
-		}
-
-		return decision, "denied by mock", nil
+		return decision, "mock decision", nil
 	}
+
+	// Try match allowing empty namespace in config to mean all namespaces (optional enhancement, but keeping simple for now)
 
 	return authorizer.DecisionNoOpinion, "no opinion", nil
 }

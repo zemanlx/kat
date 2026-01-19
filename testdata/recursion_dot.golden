@@ -94,6 +94,7 @@ ok  	sidecar-injection	0.000s
 ok  	block-pod-exec	0.000s
 ok  	block-privileged-containers	0.000s
 ok  	block-team-ci-service-accounts	0.000s
+ok  	check-authorizer	0.000s
 ok  	conditional-policy	0.000s
 ok  	delete-protection	0.000s
 ok  	deprecated-api-warn	0.000s

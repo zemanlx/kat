@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/zemanlx/kat/internal/evaluator"
 	admissionv1 "k8s.io/api/admission/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,6 +49,8 @@ func parseTestRequestFile(testReq *testRequest) error {
 		return parseAnnotationsYAML(testReq, data)
 	case strings.HasSuffix(testReq.FilePath, ".warnings.txt"):
 		return parseWarningsFile(testReq, data)
+	case strings.HasSuffix(testReq.FilePath, ".authorizer.yaml"):
+		return parseAuthorizerYAML(testReq, data)
 	default:
 		return fmt.Errorf("%w: %s", ErrUnknownFileType, testReq.FilePath)
 	}
@@ -278,6 +281,11 @@ func loadAuxiliaryFiles(testReq *testRequest) error {
 		return err
 	}
 
+	// Look for corresponding .authorizer.yaml file
+	if err := loadAuthorizerFile(testReq); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -354,6 +362,26 @@ func loadMessageFile(testReq *testRequest) error {
 	testReq.ExpectMessage = strings.TrimSpace(string(messageData))
 
 	return nil
+}
+
+func loadAuthorizerFile(testReq *testRequest) error {
+	authPath := strings.Replace(testReq.FilePath, ".object.yaml", ".authorizer.yaml", 1)
+	authPath = strings.Replace(authPath, ".request.yaml", ".authorizer.yaml", 1)
+
+	if _, err := os.Stat(authPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return fmt.Errorf("stat authorizer file: %w", err)
+	}
+
+	authData, err := os.ReadFile(authPath)
+	if err != nil {
+		return fmt.Errorf("failed to read authorizer file: %w", err)
+	}
+
+	return parseAuthorizerYAML(testReq, authData)
 }
 
 // parseOldObjectYAML parses a raw Kubernetes object and creates an AdmissionRequest for DELETE operation.
@@ -471,4 +499,41 @@ func parseWarningsFile(testReq *testRequest, data []byte) error {
 	testReq.ExpectWarnings = warnings
 
 	return nil
+}
+
+// parseAuthorizerYAML parses expected authorizer mock configuration.
+func parseAuthorizerYAML(testReq *testRequest, data []byte) error {
+	var mocks []evaluator.AuthorizationMockConfig
+	if err := yaml.Unmarshal(data, &mocks); err != nil {
+		return fmt.Errorf("failed to unmarshal authorizer mocks: %w", err)
+	}
+
+	testReq.Authorizer = mocks
+
+	return nil
+}
+
+// InferOperation determines the Kubernetes admission operation based on which YAML files are present.
+// If requestOpStr is non-empty, it's used directly (for explicit CONNECT operations).
+// Otherwise, operation is inferred from the presence of object/oldObject files:
+//   - object only -> CREATE
+//   - oldObject only -> DELETE
+//   - both object and oldObject -> UPDATE
+func InferOperation(hasObject, hasOldObject bool, requestOpStr string) (string, error) {
+	// Explicit operation from request.yaml (e.g., CONNECT)
+	if requestOpStr != "" {
+		return requestOpStr, nil
+	}
+
+	// Infer from file presence
+	switch {
+	case hasObject && !hasOldObject:
+		return string(admissionv1.Create), nil
+	case !hasObject && hasOldObject:
+		return string(admissionv1.Delete), nil
+	case hasObject && hasOldObject:
+		return string(admissionv1.Update), nil
+	default:
+		return "", fmt.Errorf("%w: no object/oldObject files and no explicit operation", ErrCannotInferOperation)
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/zemanlx/kat/internal/evaluator"
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
@@ -34,12 +35,13 @@ type TestCase struct {
 	PolicyName string
 
 	// Inputs for evaluation
-	Request      *admissionv1.AdmissionRequest
-	Object       *unstructured.Unstructured
-	OldObject    *unstructured.Unstructured
-	Params       *unstructured.Unstructured
-	NamespaceObj *unstructured.Unstructured
-	UserInfo     user.Info
+	Request       *admissionv1.AdmissionRequest
+	Object        *unstructured.Unstructured
+	OldObject     *unstructured.Unstructured
+	Params        *unstructured.Unstructured
+	NamespaceObj  *unstructured.Unstructured
+	UserInfo      user.Info
+	Authorizer    []evaluator.AuthorizationMockConfig
 
 	// Expected outcomes
 	ExpectAllowed          bool
@@ -58,6 +60,7 @@ func (tc *TestCase) GetOldObject() *unstructured.Unstructured      { return tc.O
 func (tc *TestCase) GetParams() *unstructured.Unstructured         { return tc.Params }
 func (tc *TestCase) GetNamespaceObj() *unstructured.Unstructured   { return tc.NamespaceObj }
 func (tc *TestCase) GetUserInfo() user.Info                        { return tc.UserInfo }
+func (tc *TestCase) GetAuthorizer() []evaluator.AuthorizationMockConfig { return tc.Authorizer }
 func (tc *TestCase) GetExpectAllowed() bool                        { return tc.ExpectAllowed }
 func (tc *TestCase) GetExpectMessage() string                      { return tc.ExpectMessage }
 func (tc *TestCase) GetExpectWarnings() []string                   { return tc.ExpectWarnings }
@@ -88,6 +91,7 @@ type testRequest struct {
 	ExpectMutated          bool
 	ExpectedObject         *unstructured.Unstructured
 	Error                  error
+	Authorizer             []evaluator.AuthorizationMockConfig
 }
 
 // Load discovers and loads all test suites from the given path.
@@ -150,6 +154,7 @@ func convertToTestCases(requests []*testRequest) []*TestCase {
 			ExpectMutated:          req.ExpectMutated,
 			ExpectedObject:         req.ExpectedObject,
 			Error:                  req.Error,
+			Authorizer:             req.Authorizer,
 		}
 	}
 
@@ -377,7 +382,8 @@ func isTestFile(name string) bool {
 		strings.HasSuffix(name, ".oldObject.yaml") ||
 		strings.HasSuffix(name, ".params.yaml") ||
 		strings.HasSuffix(name, ".annotations.yaml") ||
-		strings.HasSuffix(name, ".warnings.txt")
+		strings.HasSuffix(name, ".warnings.txt") ||
+		strings.HasSuffix(name, ".authorizer.yaml")
 }
 
 func testBaseName(name string) string {
@@ -387,6 +393,7 @@ func testBaseName(name string) string {
 	baseName = strings.TrimSuffix(baseName, ".params.yaml")
 	baseName = strings.TrimSuffix(baseName, ".annotations.yaml")
 	baseName = strings.TrimSuffix(baseName, ".warnings.txt")
+	baseName = strings.TrimSuffix(baseName, ".authorizer.yaml")
 
 	return baseName
 }
@@ -514,6 +521,10 @@ func mergeTestRequests(testReq, tempReq *testRequest) {
 
 	if tempReq.ExpectMutated {
 		testReq.ExpectMutated = tempReq.ExpectMutated
+	}
+
+	if len(tempReq.Authorizer) > 0 {
+		testReq.Authorizer = tempReq.Authorizer
 	}
 }
 

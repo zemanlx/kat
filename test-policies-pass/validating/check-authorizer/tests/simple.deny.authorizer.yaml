@@ -1,0 +1,6 @@
+- group: ""
+  resource: "pods"
+  subresource: ""
+  namespace: "default"
+  verb: "create"
+  decision: "deny"

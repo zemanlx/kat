@@ -1,0 +1,12 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: check-authorizer
+spec:
+  matchConditions:
+    - name: "is-configmap"
+      expression: "object.kind == 'ConfigMap'"
+  validations:
+    - expression: |
+        authorizer.group('').resource('pods').namespace('default').check('create').allowed()
+      message: "User must have permission to create pods"

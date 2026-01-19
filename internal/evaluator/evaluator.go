@@ -107,6 +107,7 @@ type TestCase interface {
 	GetExpectAuditAnnotations() map[string]string
 	GetExpectedObject() *unstructured.Unstructured
 	GetError() error
+	GetAuthorizer() []AuthorizationMockConfig
 }
 
 // EvaluateTest evaluates a policy against a test case and returns whether it passed.
@@ -239,6 +240,12 @@ func (e *Evaluator) evaluatePolicy(
 	validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding,
 	testCase TestCase,
 ) (*EvaluationResult, error) {
+	// Create mock authorizer if configured
+	var auth authorizer.Authorizer
+	if configs := testCase.GetAuthorizer(); len(configs) > 0 {
+		auth = NewMockAuthorizerFromConfig(configs)
+	}
+
 	switch {
 	case mutatingPolicy != nil:
 		return e.EvaluateMutating(
@@ -248,7 +255,7 @@ func (e *Evaluator) evaluatePolicy(
 			testCase.GetOldObject(),
 			testCase.GetParams(),
 			testCase.GetNamespaceObj(),
-			nil, // No authorizer for now
+			auth,
 			testCase.GetUserInfo(),
 		)
 	case validatingPolicy != nil:
@@ -260,7 +267,7 @@ func (e *Evaluator) evaluatePolicy(
 			testCase.GetOldObject(),
 			testCase.GetParams(),
 			testCase.GetNamespaceObj(),
-			nil, // No authorizer for now
+			auth,
 			testCase.GetUserInfo(),
 		)
 	default:

@@ -55,7 +55,7 @@ func parseFlags(args []string, stdout *os.File) (*config, error) {
 		return nil, fmt.Errorf("parse flags: %w", err)
 	}
 
-	testPaths := []string{"test-policies-pass"}
+	testPaths := []string{"."}
 	if fs.NArg() > 0 {
 		testPaths = fs.Args()
 	}

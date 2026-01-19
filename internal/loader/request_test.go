@@ -155,3 +155,72 @@ func TestValidateWithScheme(t *testing.T) {
 		})
 	}
 }
+
+func TestInferOperation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		hasObject    bool
+		hasOldObject bool
+		requestOpStr string
+		want         string
+		wantErr      bool
+	}{
+		{
+			name:         "Explicit operation",
+			hasObject:    true,
+			hasOldObject: false,
+			requestOpStr: "CONNECT",
+			want:         "CONNECT",
+			wantErr:      false,
+		},
+		{
+			name:         "Create (Object only)",
+			hasObject:    true,
+			hasOldObject: false,
+			requestOpStr: "",
+			want:         "CREATE",
+			wantErr:      false,
+		},
+		{
+			name:         "Delete (OldObject only)",
+			hasObject:    false,
+			hasOldObject: true,
+			requestOpStr: "",
+			want:         "DELETE",
+			wantErr:      false,
+		},
+		{
+			name:         "Update (Both)",
+			hasObject:    true,
+			hasOldObject: true,
+			requestOpStr: "",
+			want:         "UPDATE",
+			wantErr:      false,
+		},
+		{
+			name:         "Error (Neither)",
+			hasObject:    false,
+			hasOldObject: false,
+			requestOpStr: "",
+			want:         "",
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := InferOperation(tt.hasObject, tt.hasOldObject, tt.requestOpStr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("InferOperation() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("InferOperation() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,19 @@
+apiVersion: admission.k8s.io/v1
+kind: AdmissionRequest
+operation: CREATE
+name: my-config
+namespace: default
+resource:
+  group: ""
+  version: v1
+  resource: configmaps
+object:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: my-config
+  data:
+    key: value
+userInfo:
+  username: admin
+  groups: ["system:masters"]

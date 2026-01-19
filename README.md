@@ -191,6 +191,23 @@ data:
   excludedNamespaces: "kube-system,monitoring"
 ```
 
+#### Authorizer Mocking (`.authorizer.yaml`)
+
+You can mock Kubernetes Authorizer responses (SubjectAccessReview) for policies that use `authorizer` checks in CEL.
+Create a `.authorizer.yaml` file side-by-side with your test files.
+
+```yaml
+# my-policy.test-1.allow.authorizer.yaml
+- group: ""
+  resource: "pods"
+  subresource: ""
+  namespace: "default"
+  verb: "create"
+  decision: "allow"
+```
+
+The mock matches requests based on group, resource, subresource, namespace, and verb. By default, any check not explicitly mocked will return "NoOpinion" (which usually results in a denial or failed check depending on policy logic).
+
 #### Operations (UPDATE / DELETE)
 
 - **UPDATE**: Provide both `.object.yaml` (new) and `.oldObject.yaml` (old).

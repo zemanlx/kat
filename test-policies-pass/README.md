@@ -83,6 +83,23 @@ This directory contains comprehensive test policies covering all major features 
 
 ---
 
+#### `check-authorizer/` (Validating with Authorizer Check)
+
+**Purpose:** Validates that the user has specific RBAC permissions (SubjectAccessReview).
+
+**Features tested:**
+
+- `authorizer` variable access in CEL
+- `authorizer.check(...).allowed()`
+- Mocking Authorizer responses with `.authorizer.yaml`
+
+**Test cases:**
+
+- ✅ `allowed` - User has mocked 'create pods' permission
+- ❌ `denied` - User lacks mocked 'create pods' permission
+
+---
+
 #### `replica-limit/`
 
 **Purpose:** Enforces a maximum replica count of 10.
@@ -340,6 +357,7 @@ kat ./test-policies-pass/require-owner-label/tests/require-owner-label.without-l
 | Complex CEL                       | `block-privileged-containers`                                      |
 | Request context (userInfo)        | `block-team-ci-service-accounts`                                   |
 | Request context (namespaceObject) | `namespace-based-validation`                                       |
+| Authorizer Check                  | `check-authorizer`                                                 |
 | CONNECT operation                 | `block-pod-exec`                                                   |
 | DELETE operation                  | `delete-protection`                                                |
 | UPDATE operation                  | `prevent-owner-change`                                             |
