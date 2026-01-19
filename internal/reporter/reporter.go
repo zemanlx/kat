@@ -110,6 +110,7 @@ func (r *Reporter) StartSuite(suiteName string) *SuiteReporter {
 		})
 	case FormatDefault:
 		// Default format doesn't output suite start
+		break
 	}
 
 	return sr
@@ -131,6 +132,7 @@ func (s *SuiteReporter) StartTest(testName string) {
 		})
 	case FormatDefault:
 		// Default format doesn't output test start
+		break
 	}
 }
 
@@ -152,6 +154,7 @@ func (s *SuiteReporter) ReportPass(testName string) {
 		})
 	case FormatDefault:
 		// Default format doesn't output individual test passes
+		break
 	}
 }
 
@@ -242,6 +245,7 @@ func (s *SuiteReporter) End() {
 		}
 	case FormatVerbose:
 		// Verbose mode doesn't output suite-level lines
+		break
 	}
 }
 
@@ -271,7 +275,7 @@ func (r *Reporter) Summary() error {
 			fmt.Fprintf(r.out, "PASS\n")
 		}
 	case FormatDefault:
-		// Default mode summary handled above/inline
+		break
 	}
 
 	if r.failedTests > 0 {
