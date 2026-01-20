@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/kat-logo-dark.svg">
+    <img src="assets/kat-logo.svg" width="160" alt="Kat logo">
+  </picture>
+</p>
+
 # kat - Kubernetes Admission Tester
 
 [![CI](https://github.com/zemanlx/kat/actions/workflows/ci.yml/badge.svg)](https://github.com/zemanlx/kat/actions/workflows/ci.yml)
