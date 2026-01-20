@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
@@ -13,6 +14,18 @@ import (
 	"github.com/zemanlx/kat/internal/loader"
 	"github.com/zemanlx/kat/internal/reporter"
 )
+
+const defaultVersion = "(devel)"
+
+var version = defaultVersion
+
+type config struct {
+	runPattern string
+	verbose    bool
+	jsonOutput bool
+	version    bool
+	testPaths  []string
+}
 
 func main() {
 	if err := run(context.Background(), os.Args, os.Getenv, os.Stdin, os.Stdout); err != nil {
@@ -28,19 +41,18 @@ func run(_ context.Context, args []string, _ func(string) string, _ *os.File, st
 		return err
 	}
 
+	if cfg.version {
+		fmt.Fprintln(stdout, getVersion())
+
+		return nil
+	}
+
 	suites, err := loadSuites(cfg.testPaths, cfg.runPattern)
 	if err != nil {
 		return err
 	}
 
 	return executeTests(suites, cfg, stdout)
-}
-
-type config struct {
-	runPattern string
-	verbose    bool
-	jsonOutput bool
-	testPaths  []string
 }
 
 func parseFlags(args []string, stdout *os.File) (*config, error) {
@@ -50,6 +62,7 @@ func parseFlags(args []string, stdout *os.File) (*config, error) {
 	runPattern := fs.String("run", "", "run only tests matching pattern")
 	verbose := fs.Bool("v", false, "verbose output")
 	jsonOutput := fs.Bool("json", false, "output test results in JSON format")
+	showVersion := fs.Bool("version", false, "print version and exit")
 
 	if err := fs.Parse(args[1:]); err != nil {
 		return nil, fmt.Errorf("parse flags: %w", err)
@@ -64,6 +77,7 @@ func parseFlags(args []string, stdout *os.File) (*config, error) {
 		runPattern: *runPattern,
 		verbose:    *verbose,
 		jsonOutput: *jsonOutput,
+		version:    *showVersion,
 		testPaths:  testPaths,
 	}, nil
 }
@@ -174,4 +188,21 @@ func findPolicies(suite *loader.TestSuite, policyName string) (*admissionv1beta1
 	}
 
 	return mutatingPolicy, validatingPolicy, validatingBinding
+}
+
+func getVersion() string {
+	if version != defaultVersion {
+		return version
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return version
+	}
+
+	if info.Main.Version == "" || info.Main.Version == defaultVersion {
+		return version
+	}
+
+	return info.Main.Version
 }
