@@ -1,0 +1,10 @@
+# No skip-validation label (DoesNotExist - matches) -> policy applies -> deny
+operation: CREATE
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: normal-namespace
+    labels:
+      environment: prod
+

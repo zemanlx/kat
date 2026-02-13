@@ -1,0 +1,18 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: namespace-selector-operators-test-binding
+spec:
+  policyName: namespace-selector-operators-test
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        # NotIn: policy applies to namespaces NOT in staging
+        - key: environment
+          operator: NotIn
+          values: ["staging"]
+        # Exists: policy applies only if 'team' label exists
+        - key: team
+          operator: Exists
+

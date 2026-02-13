@@ -1,0 +1,11 @@
+# Has skip-validation label (DoesNotExist - doesn't match) -> policy doesn't apply -> allow
+operation: CREATE
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: skipped-namespace
+    labels:
+      environment: prod
+      skip-validation: "true"
+

@@ -696,7 +696,7 @@ func TestEvaluateMutating(t *testing.T) {
 				Operation: admissionv1.Create,
 			}
 
-			result, err := evaluator.EvaluateMutating(tc.policy, request, tc.object, tc.oldObject, nil, nil, nil, nil)
+			result, err := evaluator.EvaluateMutating(tc.policy, nil, request, tc.object, tc.oldObject, nil, nil, nil, nil)
 
 			if tc.expectedError {
 				if err == nil {
@@ -1558,6 +1558,7 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 	tests := []struct {
 		name              string
 		mutatingPolicy    *admissionv1beta1.MutatingAdmissionPolicy
+		mutatingBinding   *admissionv1beta1.MutatingAdmissionPolicyBinding
 		validatingPolicy  *admissionregv1.ValidatingAdmissionPolicy
 		validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding
 		testCase          MockTestCase
@@ -1827,7 +1828,7 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			result := evaluator.EvaluateTest(tc.mutatingPolicy, tc.validatingPolicy, tc.validatingBinding, tc.testCase)
+			result := evaluator.EvaluateTest(tc.mutatingPolicy, tc.mutatingBinding, tc.validatingPolicy, tc.validatingBinding, tc.testCase)
 
 			if result.Passed != tc.wantPassed {
 				t.Errorf("EvaluateTest() Passed = %v, want %v. Message: %s", result.Passed, tc.wantPassed, result.Message)

@@ -1,0 +1,11 @@
+# environment=prod (NotIn staging - matches) + team=platform (Exists - matches) -> policy applies -> deny
+operation: CREATE
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: prod-with-team
+    labels:
+      environment: prod
+      team: platform
+
