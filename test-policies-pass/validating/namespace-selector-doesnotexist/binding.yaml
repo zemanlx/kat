@@ -1,0 +1,14 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: namespace-selector-doesnotexist-test-binding
+spec:
+  policyName: namespace-selector-doesnotexist-test
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        # DoesNotExist: policy applies only if 'skip-validation' label does NOT exist
+        - key: skip-validation
+          operator: DoesNotExist
+

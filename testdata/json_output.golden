@@ -10,6 +10,14 @@
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"mutating-with-binding","test":"no-params.allowed.yaml"}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"mutating-with-binding","test":"no-params.allowed.yaml","elapsed":0}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"mutating-with-binding","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"namespace-selector-binding-mutating"}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"namespace-selector-binding-mutating","test":"namespace-selector-binding-mutating-test.dev-namespace.allow.yaml"}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"namespace-selector-binding-mutating","test":"namespace-selector-binding-mutating-test.dev-namespace.allow.yaml","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"namespace-selector-binding-mutating","test":"namespace-selector-binding-mutating-test.no-label.allow.yaml"}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"namespace-selector-binding-mutating","test":"namespace-selector-binding-mutating-test.no-label.allow.yaml","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"namespace-selector-binding-mutating","test":"namespace-selector-binding-mutating-test.prod-namespace.mutate.yaml"}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"namespace-selector-binding-mutating","test":"namespace-selector-binding-mutating-test.prod-namespace.mutate.yaml","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"namespace-selector-binding-mutating","elapsed":0}
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"sidecar-injection"}
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"sidecar-injection","test":"sidecar-injection.adding-istio-sidecar.yaml"}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"sidecar-injection","test":"sidecar-injection.adding-istio-sidecar.yaml","elapsed":0}

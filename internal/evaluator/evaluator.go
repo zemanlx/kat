@@ -20,7 +20,9 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	plugin "k8s.io/apiserver/pkg/admission/plugin/cel"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -113,6 +115,7 @@ type TestCase interface {
 // EvaluateTest evaluates a policy against a test case and returns whether it passed.
 func (e *Evaluator) EvaluateTest(
 	mutatingPolicy *admissionv1beta1.MutatingAdmissionPolicy,
+	mutatingBinding *admissionv1beta1.MutatingAdmissionPolicyBinding,
 	validatingPolicy *admissionregv1.ValidatingAdmissionPolicy,
 	validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding,
 	testCase TestCase,
@@ -135,7 +138,7 @@ func (e *Evaluator) EvaluateTest(
 	}
 
 	// Evaluate policy
-	evalResult, err := e.evaluatePolicy(mutatingPolicy, validatingPolicy, validatingBinding, testCase)
+	evalResult, err := e.evaluatePolicy(mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding, testCase)
 	if err != nil {
 		return &TestResult{
 			Passed:   false,
@@ -236,6 +239,7 @@ func getDiff(expected, actual string) string {
 // evaluatePolicy evaluates the appropriate policy (mutating or validating) and returns the result.
 func (e *Evaluator) evaluatePolicy(
 	mutatingPolicy *admissionv1beta1.MutatingAdmissionPolicy,
+	mutatingBinding *admissionv1beta1.MutatingAdmissionPolicyBinding,
 	validatingPolicy *admissionregv1.ValidatingAdmissionPolicy,
 	validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding,
 	testCase TestCase,
@@ -250,6 +254,7 @@ func (e *Evaluator) evaluatePolicy(
 	case mutatingPolicy != nil:
 		return e.EvaluateMutating(
 			mutatingPolicy,
+			mutatingBinding,
 			testCase.GetRequest(),
 			testCase.GetObject(),
 			testCase.GetOldObject(),
@@ -566,6 +571,7 @@ type TestOutcome struct {
 // EvaluateMutating evaluates a MutatingAdmissionPolicy against an admission request.
 func (e *Evaluator) EvaluateMutating(
 	policy *admissionv1beta1.MutatingAdmissionPolicy,
+	binding *admissionv1beta1.MutatingAdmissionPolicyBinding,
 	request *admissionv1.AdmissionRequest,
 	object *unstructured.Unstructured,
 	oldObject *unstructured.Unstructured,
@@ -574,6 +580,14 @@ func (e *Evaluator) EvaluateMutating(
 	authorizer authorizer.Authorizer,
 	userInfo user.Info,
 ) (*EvaluationResult, error) {
+	// Evaluate binding's namespaceSelector if present
+	if matched, err := e.matchesNamespaceSelectorV1Beta1(binding, namespaceObj); err != nil {
+		return nil, fmt.Errorf("evaluate namespace selector: %w", err)
+	} else if !matched {
+		// Namespace selector doesn't match, policy doesn't apply
+		return &EvaluationResult{Allowed: true}, nil
+	}
+
 	requestMap, err := convertAdmissionRequest(request)
 	if err != nil {
 		return nil, fmt.Errorf("convert admission request: %w", err)
@@ -693,7 +707,7 @@ func (e *Evaluator) applyMutations(
 }
 
 // EvaluateValidating evaluates a ValidatingAdmissionPolicy against an admission request.
-func (e *Evaluator) EvaluateValidating(
+func (e *Evaluator) EvaluateValidating( //nolint:cyclop // Complexity is inherent in evaluating all aspects of a validating policy
 	policy *admissionregv1.ValidatingAdmissionPolicy,
 	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
 	request *admissionv1.AdmissionRequest,
@@ -704,6 +718,14 @@ func (e *Evaluator) EvaluateValidating(
 	authorizer authorizer.Authorizer,
 	userInfo user.Info,
 ) (*EvaluationResult, error) {
+	// Evaluate binding's namespaceSelector if present
+	if matched, err := e.matchesNamespaceSelector(binding, namespaceObj); err != nil {
+		return nil, fmt.Errorf("evaluate namespace selector: %w", err)
+	} else if !matched {
+		// Namespace selector doesn't match, policy doesn't apply
+		return &EvaluationResult{Allowed: true}, nil
+	}
+
 	// Convert admission request
 	requestMap, err := convertAdmissionRequest(request)
 	if err != nil {
@@ -752,6 +774,74 @@ func (e *Evaluator) EvaluateValidating(
 		Allowed:          true,
 		AuditAnnotations: auditAnnotations,
 	}, nil
+}
+
+// matchesNamespaceSelector checks if the namespace object's labels match the binding's namespace selector.
+// Returns true if the selector matches (policy should be evaluated), false otherwise.
+func (e *Evaluator) matchesNamespaceSelector(
+	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
+	namespaceObj *unstructured.Unstructured,
+) (bool, error) {
+	// No binding or no matchResources means match all
+	if binding == nil || binding.Spec.MatchResources == nil || binding.Spec.MatchResources.NamespaceSelector == nil {
+		return true, nil
+	}
+
+	// Convert LabelSelector to labels.Selector
+	selector, err := metav1.LabelSelectorAsSelector(binding.Spec.MatchResources.NamespaceSelector)
+	if err != nil {
+		return false, fmt.Errorf("parse namespace selector: %w", err)
+	}
+
+	// Empty selector matches everything
+	if selector.Empty() {
+		return true, nil
+	}
+
+	// No namespace object provided - can't evaluate selector
+	if namespaceObj == nil {
+		return true, nil
+	}
+
+	// Get labels from namespace object
+	nsLabels := labels.Set(namespaceObj.GetLabels())
+
+	// Check if namespace labels match the selector
+	return selector.Matches(nsLabels), nil
+}
+
+// matchesNamespaceSelectorV1Beta1 checks if the namespace object's labels match the binding's namespace selector.
+// Returns true if the selector matches (policy should be evaluated), false otherwise.
+func (e *Evaluator) matchesNamespaceSelectorV1Beta1(
+	binding *admissionv1beta1.MutatingAdmissionPolicyBinding,
+	namespaceObj *unstructured.Unstructured,
+) (bool, error) {
+	// No binding or no matchResources means match all
+	if binding == nil || binding.Spec.MatchResources == nil || binding.Spec.MatchResources.NamespaceSelector == nil {
+		return true, nil
+	}
+
+	// Convert LabelSelector to labels.Selector
+	selector, err := metav1.LabelSelectorAsSelector(binding.Spec.MatchResources.NamespaceSelector)
+	if err != nil {
+		return false, fmt.Errorf("parse namespace selector: %w", err)
+	}
+
+	// Empty selector matches everything
+	if selector.Empty() {
+		return true, nil
+	}
+
+	// No namespace object provided - can't evaluate selector
+	if namespaceObj == nil {
+		return true, nil
+	}
+
+	// Get labels from namespace object
+	nsLabels := labels.Set(namespaceObj.GetLabels())
+
+	// Check if namespace labels match the selector
+	return selector.Matches(nsLabels), nil
 }
 
 // evaluateMatchConditions evaluates all match conditions and returns true if all match.

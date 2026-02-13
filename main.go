@@ -137,7 +137,7 @@ func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.T
 	for _, test := range suite.Tests {
 		suiteRep.StartTest(test.Name)
 
-		mutatingPolicy, validatingPolicy, validatingBinding := findPolicies(suite, test.PolicyName)
+		mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding := findPolicies(suite, test.PolicyName)
 
 		if mutatingPolicy == nil && validatingPolicy == nil {
 			suiteRep.ReportFail(test.Name, fmt.Sprintf("policy %q not found", test.PolicyName))
@@ -146,7 +146,7 @@ func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.T
 		}
 
 		// Evaluate test
-		result := eval.EvaluateTest(mutatingPolicy, validatingPolicy, validatingBinding, test)
+		result := eval.EvaluateTest(mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding, test)
 
 		suiteRep.ReportResult(test.Name, result)
 	}
@@ -154,16 +154,25 @@ func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.T
 	return nil
 }
 
-func findPolicies(suite *loader.TestSuite, policyName string) (*admissionv1beta1.MutatingAdmissionPolicy, *admissionregv1.ValidatingAdmissionPolicy, *admissionregv1.ValidatingAdmissionPolicyBinding) {
-	var mutatingPolicy *admissionv1beta1.MutatingAdmissionPolicy
-
-	var validatingPolicy *admissionregv1.ValidatingAdmissionPolicy
-
-	var validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding
+func findPolicies(suite *loader.TestSuite, policyName string) (*admissionv1beta1.MutatingAdmissionPolicy, *admissionv1beta1.MutatingAdmissionPolicyBinding, *admissionregv1.ValidatingAdmissionPolicy, *admissionregv1.ValidatingAdmissionPolicyBinding) {
+	var (
+		mutatingPolicy    *admissionv1beta1.MutatingAdmissionPolicy
+		mutatingBinding   *admissionv1beta1.MutatingAdmissionPolicyBinding
+		validatingPolicy  *admissionregv1.ValidatingAdmissionPolicy
+		validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding
+	)
 
 	for _, policy := range suite.MutatingPolicies {
 		if policy.Name == policyName {
 			mutatingPolicy = policy
+			// Find matching binding
+			for _, binding := range suite.MutatingBindings {
+				if binding.Spec.PolicyName == policy.Name {
+					mutatingBinding = binding
+
+					break
+				}
+			}
 
 			break
 		}
@@ -187,7 +196,7 @@ func findPolicies(suite *loader.TestSuite, policyName string) (*admissionv1beta1
 		}
 	}
 
-	return mutatingPolicy, validatingPolicy, validatingBinding
+	return mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding
 }
 
 func getVersion() string {

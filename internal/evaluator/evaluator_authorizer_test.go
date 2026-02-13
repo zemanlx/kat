@@ -105,7 +105,7 @@ func runMutatingTest(t *testing.T, policy *admissionv1beta1.MutatingAdmissionPol
 
 	userInfo := MockUserInfo(username, groups)
 
-	result, err := evaluator.EvaluateMutating(policy, request, object, nil, nil, nil, auth, userInfo)
+	result, err := evaluator.EvaluateMutating(policy, nil, request, object, nil, nil, nil, auth, userInfo)
 	if err != nil {
 		t.Fatalf("EvaluateMutating() error = %v", err)
 	}

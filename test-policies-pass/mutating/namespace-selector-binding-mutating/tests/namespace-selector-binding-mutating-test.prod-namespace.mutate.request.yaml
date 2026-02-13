@@ -1,0 +1,9 @@
+operation: CREATE
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: prod-namespace
+    labels:
+      environment: prod
+

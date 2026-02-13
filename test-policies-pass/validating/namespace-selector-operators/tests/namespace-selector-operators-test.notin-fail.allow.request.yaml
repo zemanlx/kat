@@ -1,0 +1,11 @@
+# environment=staging (NotIn staging - doesn't match) -> policy doesn't apply -> allow
+operation: CREATE
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: staging-namespace
+    labels:
+      environment: staging
+      team: platform
+

@@ -1,0 +1,10 @@
+# environment=prod (NotIn staging - matches) + no team label (Exists - doesn't match) -> policy doesn't apply -> allow
+operation: CREATE
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: prod-no-team
+    labels:
+      environment: prod
+

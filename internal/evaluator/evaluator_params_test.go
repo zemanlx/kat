@@ -330,7 +330,7 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 				Operation: admissionv1.Create,
 			}
 
-			result, err := evaluator.EvaluateMutating(tc.policy, request, tc.object, nil, tc.params, nil, nil, nil)
+			result, err := evaluator.EvaluateMutating(tc.policy, nil, request, tc.object, nil, tc.params, nil, nil, nil)
 			if err != nil {
 				t.Fatalf("EvaluateMutating() error = %v", err)
 			}
