@@ -1,0 +1,13 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: namespace-selector-binding-mutating-test-binding
+spec:
+  policyName: namespace-selector-binding-mutating-test
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: environment
+          operator: In
+          values: ["prod"]
+

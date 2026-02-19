@@ -1,0 +1,8 @@
+operation: CREATE
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: unlabeled-namespace
+    labels: {}
+

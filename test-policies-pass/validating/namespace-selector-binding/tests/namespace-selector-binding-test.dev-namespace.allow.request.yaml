@@ -1,0 +1,9 @@
+operation: CREATE
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: dev-namespace
+    labels:
+      environment: dev
+
