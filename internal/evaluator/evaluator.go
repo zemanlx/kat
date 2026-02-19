@@ -776,19 +776,18 @@ func (e *Evaluator) EvaluateValidating( //nolint:cyclop // Complexity is inheren
 	}, nil
 }
 
-// matchesNamespaceSelector checks if the namespace object's labels match the binding's namespace selector.
-// Returns true if the selector matches (policy should be evaluated), false otherwise.
-func (e *Evaluator) matchesNamespaceSelector(
-	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
+// matchesNamespaceSelectorByLabelSelector checks if the namespace object's labels match the given label selector.
+// Returns true if the selector is nil, empty, or matches the namespace labels.
+func matchesNamespaceSelectorByLabelSelector(
+	labelSelector *metav1.LabelSelector,
 	namespaceObj *unstructured.Unstructured,
 ) (bool, error) {
-	// No binding or no matchResources means match all
-	if binding == nil || binding.Spec.MatchResources == nil || binding.Spec.MatchResources.NamespaceSelector == nil {
+	if labelSelector == nil {
 		return true, nil
 	}
 
 	// Convert LabelSelector to labels.Selector
-	selector, err := metav1.LabelSelectorAsSelector(binding.Spec.MatchResources.NamespaceSelector)
+	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		return false, fmt.Errorf("parse namespace selector: %w", err)
 	}
@@ -803,11 +802,20 @@ func (e *Evaluator) matchesNamespaceSelector(
 		return true, nil
 	}
 
-	// Get labels from namespace object
-	nsLabels := labels.Set(namespaceObj.GetLabels())
-
 	// Check if namespace labels match the selector
-	return selector.Matches(nsLabels), nil
+	return selector.Matches(labels.Set(namespaceObj.GetLabels())), nil
+}
+
+// matchesNamespaceSelector checks if the namespace object's labels match the binding's namespace selector.
+// Returns true if the selector matches (policy should be evaluated), false otherwise.
+func (e *Evaluator) matchesNamespaceSelector(
+	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
+	namespaceObj *unstructured.Unstructured,
+) (bool, error) {
+	if binding == nil || binding.Spec.MatchResources == nil {
+		return true, nil
+	}
+	return matchesNamespaceSelectorByLabelSelector(binding.Spec.MatchResources.NamespaceSelector, namespaceObj)
 }
 
 // matchesNamespaceSelectorV1Beta1 checks if the namespace object's labels match the binding's namespace selector.
@@ -816,32 +824,10 @@ func (e *Evaluator) matchesNamespaceSelectorV1Beta1(
 	binding *admissionv1beta1.MutatingAdmissionPolicyBinding,
 	namespaceObj *unstructured.Unstructured,
 ) (bool, error) {
-	// No binding or no matchResources means match all
-	if binding == nil || binding.Spec.MatchResources == nil || binding.Spec.MatchResources.NamespaceSelector == nil {
+	if binding == nil || binding.Spec.MatchResources == nil {
 		return true, nil
 	}
-
-	// Convert LabelSelector to labels.Selector
-	selector, err := metav1.LabelSelectorAsSelector(binding.Spec.MatchResources.NamespaceSelector)
-	if err != nil {
-		return false, fmt.Errorf("parse namespace selector: %w", err)
-	}
-
-	// Empty selector matches everything
-	if selector.Empty() {
-		return true, nil
-	}
-
-	// No namespace object provided - can't evaluate selector
-	if namespaceObj == nil {
-		return true, nil
-	}
-
-	// Get labels from namespace object
-	nsLabels := labels.Set(namespaceObj.GetLabels())
-
-	// Check if namespace labels match the selector
-	return selector.Matches(nsLabels), nil
+	return matchesNamespaceSelectorByLabelSelector(binding.Spec.MatchResources.NamespaceSelector, namespaceObj)
 }
 
 // evaluateMatchConditions evaluates all match conditions and returns true if all match.
