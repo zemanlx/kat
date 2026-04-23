@@ -6,7 +6,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -20,7 +19,7 @@ func TestEvaluateMutating_WithAuthorizer(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		policy          *admissionv1beta1.MutatingAdmissionPolicy
+		policy          *admissionregv1.MutatingAdmissionPolicy
 		object          *unstructured.Unstructured
 		authorizer      *MockAuthorizer
 		username        string
@@ -88,7 +87,7 @@ func TestEvaluateMutating_WithAuthorizer(t *testing.T) {
 	}
 }
 
-func runMutatingTest(t *testing.T, policy *admissionv1beta1.MutatingAdmissionPolicy, object *unstructured.Unstructured, auth *MockAuthorizer, username string, groups []string, expectedMutated bool, expectedObject *unstructured.Unstructured) {
+func runMutatingTest(t *testing.T, policy *admissionregv1.MutatingAdmissionPolicy, object *unstructured.Unstructured, auth *MockAuthorizer, username string, groups []string, expectedMutated bool, expectedObject *unstructured.Unstructured) {
 	t.Helper()
 
 	evaluator, err := New()
@@ -128,14 +127,14 @@ func runMutatingTest(t *testing.T, policy *admissionv1beta1.MutatingAdmissionPol
 	}
 }
 
-func makeMutatingPolicy(expression string) *admissionv1beta1.MutatingAdmissionPolicy {
-	return &admissionv1beta1.MutatingAdmissionPolicy{
+func makeMutatingPolicy(expression string) *admissionregv1.MutatingAdmissionPolicy {
+	return &admissionregv1.MutatingAdmissionPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
-		Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
-			Mutations: []admissionv1beta1.Mutation{
+		Spec: admissionregv1.MutatingAdmissionPolicySpec{
+			Mutations: []admissionregv1.Mutation{
 				{
-					PatchType: admissionv1beta1.PatchTypeJSONPatch,
-					JSONPatch: &admissionv1beta1.JSONPatch{
+					PatchType: admissionregv1.PatchTypeJSONPatch,
+					JSONPatch: &admissionregv1.JSONPatch{
 						Expression: expression,
 					},
 				},

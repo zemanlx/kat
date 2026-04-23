@@ -19,7 +19,6 @@ import (
 	"gopkg.in/yaml.v3"
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -114,8 +113,8 @@ type TestCase interface {
 
 // EvaluateTest evaluates a policy against a test case and returns whether it passed.
 func (e *Evaluator) EvaluateTest(
-	mutatingPolicy *admissionv1beta1.MutatingAdmissionPolicy,
-	mutatingBinding *admissionv1beta1.MutatingAdmissionPolicyBinding,
+	mutatingPolicy *admissionregv1.MutatingAdmissionPolicy,
+	mutatingBinding *admissionregv1.MutatingAdmissionPolicyBinding,
 	validatingPolicy *admissionregv1.ValidatingAdmissionPolicy,
 	validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding,
 	testCase TestCase,
@@ -238,8 +237,8 @@ func getDiff(expected, actual string) string {
 
 // evaluatePolicy evaluates the appropriate policy (mutating or validating) and returns the result.
 func (e *Evaluator) evaluatePolicy(
-	mutatingPolicy *admissionv1beta1.MutatingAdmissionPolicy,
-	mutatingBinding *admissionv1beta1.MutatingAdmissionPolicyBinding,
+	mutatingPolicy *admissionregv1.MutatingAdmissionPolicy,
+	mutatingBinding *admissionregv1.MutatingAdmissionPolicyBinding,
 	validatingPolicy *admissionregv1.ValidatingAdmissionPolicy,
 	validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding,
 	testCase TestCase,
@@ -570,8 +569,8 @@ type TestOutcome struct {
 
 // EvaluateMutating evaluates a MutatingAdmissionPolicy against an admission request.
 func (e *Evaluator) EvaluateMutating(
-	policy *admissionv1beta1.MutatingAdmissionPolicy,
-	binding *admissionv1beta1.MutatingAdmissionPolicyBinding,
+	policy *admissionregv1.MutatingAdmissionPolicy,
+	binding *admissionregv1.MutatingAdmissionPolicyBinding,
 	request *admissionv1.AdmissionRequest,
 	object *unstructured.Unstructured,
 	oldObject *unstructured.Unstructured,
@@ -581,7 +580,7 @@ func (e *Evaluator) EvaluateMutating(
 	userInfo user.Info,
 ) (*EvaluationResult, error) {
 	// Evaluate binding's namespaceSelector if present
-	if matched, err := e.matchesNamespaceSelectorV1Beta1(binding, namespaceObj); err != nil {
+	if matched, err := e.matchesMutatingNamespaceSelector(binding, namespaceObj); err != nil {
 		return nil, fmt.Errorf("evaluate namespace selector: %w", err)
 	} else if !matched {
 		// Namespace selector doesn't match, policy doesn't apply
@@ -600,7 +599,7 @@ func (e *Evaluator) EvaluateMutating(
 
 	vars := prepareMutatingVars(requestMap, primaryObject, oldObject, params, namespaceObj, authorizer, userInfo)
 
-	matched, err := e.evaluateMatchConditionsV1Beta1(policy.Spec.MatchConditions, vars)
+	matched, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate match conditions: %w", err)
 	}
@@ -667,7 +666,7 @@ func prepareMutatingVars(
 }
 
 func (e *Evaluator) applyMutations(
-	mutations []admissionv1beta1.Mutation,
+	mutations []admissionregv1.Mutation,
 	object *unstructured.Unstructured,
 	vars map[string]any,
 ) (*unstructured.Unstructured, error) {
@@ -675,7 +674,7 @@ func (e *Evaluator) applyMutations(
 
 	for _, mutation := range mutations {
 		switch mutation.PatchType {
-		case admissionv1beta1.PatchTypeJSONPatch:
+		case admissionregv1.PatchTypeJSONPatch:
 			patch, err := e.evaluateJSONPatchMutation(mutation, vars)
 			if err != nil {
 				return nil, err
@@ -689,7 +688,7 @@ func (e *Evaluator) applyMutations(
 					return nil, err
 				}
 			}
-		case admissionv1beta1.PatchTypeApplyConfiguration:
+		case admissionregv1.PatchTypeApplyConfiguration:
 			config, err := e.evaluateApplyConfigurationMutation(mutation, vars)
 			if err != nil {
 				return nil, err
@@ -819,10 +818,10 @@ func (e *Evaluator) matchesNamespaceSelector(
 	return matchesNamespaceSelectorByLabelSelector(binding.Spec.MatchResources.NamespaceSelector, namespaceObj)
 }
 
-// matchesNamespaceSelectorV1Beta1 checks if the namespace object's labels match the binding's namespace selector.
+// matchesMutatingNamespaceSelector checks if the namespace object's labels match the mutating binding's namespace selector.
 // Returns true if the selector matches (policy should be evaluated), false otherwise.
-func (e *Evaluator) matchesNamespaceSelectorV1Beta1(
-	binding *admissionv1beta1.MutatingAdmissionPolicyBinding,
+func (e *Evaluator) matchesMutatingNamespaceSelector(
+	binding *admissionregv1.MutatingAdmissionPolicyBinding,
 	namespaceObj *unstructured.Unstructured,
 ) (bool, error) {
 	if binding == nil || binding.Spec.MatchResources == nil {
@@ -834,27 +833,6 @@ func (e *Evaluator) matchesNamespaceSelectorV1Beta1(
 
 // evaluateMatchConditions evaluates all match conditions and returns true if all match.
 func (e *Evaluator) evaluateMatchConditions(conditions []admissionregv1.MatchCondition, vars map[string]any) (bool, error) {
-	for _, condition := range conditions {
-		result, err := e.evaluateExpression(condition.Expression, vars)
-		if err != nil {
-			return false, fmt.Errorf("evaluate match condition %q: %w", condition.Name, err)
-		}
-
-		matched, ok := result.(bool)
-		if !ok {
-			return false, fmt.Errorf("%w: %s returned %T", errMatchConditionNonBoolean, condition.Name, result)
-		}
-
-		if !matched {
-			return false, nil
-		}
-	}
-
-	return true, nil
-}
-
-// evaluateMatchConditionsV1Beta1 evaluates v1beta1 match conditions.
-func (e *Evaluator) evaluateMatchConditionsV1Beta1(conditions []admissionv1beta1.MatchCondition, vars map[string]any) (bool, error) {
 	for _, condition := range conditions {
 		result, err := e.evaluateExpression(condition.Expression, vars)
 		if err != nil {
@@ -996,7 +974,7 @@ func convertAdmissionRequest(req *admissionv1.AdmissionRequest) (map[string]any,
 
 // evaluateJSONPatchMutation evaluates a JSONPatch mutation and returns the patch result.
 func (e *Evaluator) evaluateJSONPatchMutation(
-	mutation admissionv1beta1.Mutation,
+	mutation admissionregv1.Mutation,
 	vars map[string]any,
 ) (any, error) {
 	if mutation.JSONPatch == nil {
@@ -1014,7 +992,7 @@ func (e *Evaluator) evaluateJSONPatchMutation(
 
 // evaluateApplyConfigurationMutation evaluates an ApplyConfiguration mutation and returns the configuration.
 func (e *Evaluator) evaluateApplyConfigurationMutation(
-	mutation admissionv1beta1.Mutation,
+	mutation admissionregv1.Mutation,
 	vars map[string]any,
 ) (*unstructured.Unstructured, error) {
 	if mutation.ApplyConfiguration == nil {

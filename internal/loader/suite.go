@@ -10,7 +10,6 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apiserver/pkg/authentication/user"
@@ -22,8 +21,8 @@ import (
 type TestSuite struct {
 	Name               string
 	Path               string
-	MutatingPolicies   []*admissionv1beta1.MutatingAdmissionPolicy
-	MutatingBindings   []*admissionv1beta1.MutatingAdmissionPolicyBinding
+	MutatingPolicies   []*admissionregv1.MutatingAdmissionPolicy
+	MutatingBindings   []*admissionregv1.MutatingAdmissionPolicyBinding
 	ValidatingPolicies []*admissionregv1.ValidatingAdmissionPolicy
 	ValidatingBindings []*admissionregv1.ValidatingAdmissionPolicyBinding
 	Tests              []*TestCase
