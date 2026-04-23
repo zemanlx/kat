@@ -8,7 +8,6 @@ import (
 	"runtime/debug"
 
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 
 	"github.com/zemanlx/kat/internal/evaluator"
 	"github.com/zemanlx/kat/internal/loader"
@@ -154,10 +153,10 @@ func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.T
 	return nil
 }
 
-func findPolicies(suite *loader.TestSuite, policyName string) (*admissionv1beta1.MutatingAdmissionPolicy, *admissionv1beta1.MutatingAdmissionPolicyBinding, *admissionregv1.ValidatingAdmissionPolicy, *admissionregv1.ValidatingAdmissionPolicyBinding) {
+func findPolicies(suite *loader.TestSuite, policyName string) (*admissionregv1.MutatingAdmissionPolicy, *admissionregv1.MutatingAdmissionPolicyBinding, *admissionregv1.ValidatingAdmissionPolicy, *admissionregv1.ValidatingAdmissionPolicyBinding) {
 	var (
-		mutatingPolicy    *admissionv1beta1.MutatingAdmissionPolicy
-		mutatingBinding   *admissionv1beta1.MutatingAdmissionPolicyBinding
+		mutatingPolicy    *admissionregv1.MutatingAdmissionPolicy
+		mutatingBinding   *admissionregv1.MutatingAdmissionPolicyBinding
 		validatingPolicy  *admissionregv1.ValidatingAdmissionPolicy
 		validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding
 	)

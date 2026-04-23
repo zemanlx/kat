@@ -17,6 +17,8 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 )
 
+// NOTE: admissionv1beta1 is still imported to detect and reject v1beta1 resources with clear errors.
+
 // reuse a single universal deserializer across calls.
 //
 //nolint:gochecknoglobals // Used across the package for deserialization
@@ -25,8 +27,8 @@ var universalDeserializer = serializer.NewCodecFactory(scheme.Scheme).UniversalD
 // PolicySet contains policies and bindings loaded from a directory.
 type PolicySet struct {
 	Dir                string
-	MutatingPolicies   []*admissionv1beta1.MutatingAdmissionPolicy
-	MutatingBindings   []*admissionv1beta1.MutatingAdmissionPolicyBinding
+	MutatingPolicies   []*admissionv1.MutatingAdmissionPolicy
+	MutatingBindings   []*admissionv1.MutatingAdmissionPolicyBinding
 	ValidatingPolicies []*admissionv1.ValidatingAdmissionPolicy
 	ValidatingBindings []*admissionv1.ValidatingAdmissionPolicyBinding
 }
@@ -128,9 +130,9 @@ func (ps *PolicySet) loadDocuments(yamlBytes []byte, filePath string) error {
 		}
 
 		switch o := obj.(type) {
-		case *admissionv1beta1.MutatingAdmissionPolicy:
+		case *admissionv1.MutatingAdmissionPolicy:
 			ps.MutatingPolicies = append(ps.MutatingPolicies, o)
-		case *admissionv1beta1.MutatingAdmissionPolicyBinding:
+		case *admissionv1.MutatingAdmissionPolicyBinding:
 			ps.MutatingBindings = append(ps.MutatingBindings, o)
 		case *admissionv1.ValidatingAdmissionPolicy:
 			ps.ValidatingPolicies = append(ps.ValidatingPolicies, o)
@@ -140,6 +142,10 @@ func (ps *PolicySet) loadDocuments(yamlBytes []byte, filePath string) error {
 			return fmt.Errorf("%w: document %d in %s", ErrUnsupportedV1Beta1Policy, docNum, filePath)
 		case *admissionv1beta1.ValidatingAdmissionPolicyBinding:
 			return fmt.Errorf("%w: document %d in %s", ErrUnsupportedV1Beta1Binding, docNum, filePath)
+		case *admissionv1beta1.MutatingAdmissionPolicy:
+			return fmt.Errorf("%w: document %d in %s", ErrUnsupportedV1Beta1MutPolicy, docNum, filePath)
+		case *admissionv1beta1.MutatingAdmissionPolicyBinding:
+			return fmt.Errorf("%w: document %d in %s", ErrUnsupportedV1Beta1MutBinding, docNum, filePath)
 		}
 
 		docNum++

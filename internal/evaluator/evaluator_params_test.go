@@ -6,7 +6,6 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -20,7 +19,7 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		policy          *admissionv1beta1.MutatingAdmissionPolicy
+		policy          *admissionregv1.MutatingAdmissionPolicy
 		object          *unstructured.Unstructured
 		params          *unstructured.Unstructured
 		expectedMutated bool
@@ -28,13 +27,13 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 	}{
 		{
 			name: "add label from params",
-			policy: &admissionv1beta1.MutatingAdmissionPolicy{
+			policy: &admissionregv1.MutatingAdmissionPolicy{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
-				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
-					Mutations: []admissionv1beta1.Mutation{
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionregv1.Mutation{
 						{
-							PatchType: admissionv1beta1.PatchTypeJSONPatch,
-							JSONPatch: &admissionv1beta1.JSONPatch{
+							PatchType: admissionregv1.PatchTypeJSONPatch,
+							JSONPatch: &admissionregv1.JSONPatch{
 								Expression: `[JSONPatch{op: "add", path: "/metadata/labels/env", value: params.environment}]`,
 							},
 						},
@@ -70,19 +69,19 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		},
 		{
 			name: "conditional mutation based on params",
-			policy: &admissionv1beta1.MutatingAdmissionPolicy{
+			policy: &admissionregv1.MutatingAdmissionPolicy{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
-				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
-					MatchConditions: []admissionv1beta1.MatchCondition{
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					MatchConditions: []admissionregv1.MatchCondition{
 						{
 							Name:       "check-enabled",
 							Expression: `params.enabled == true`,
 						},
 					},
-					Mutations: []admissionv1beta1.Mutation{
+					Mutations: []admissionregv1.Mutation{
 						{
-							PatchType: admissionv1beta1.PatchTypeJSONPatch,
-							JSONPatch: &admissionv1beta1.JSONPatch{
+							PatchType: admissionregv1.PatchTypeJSONPatch,
+							JSONPatch: &admissionregv1.JSONPatch{
 								Expression: `[JSONPatch{op: "add", path: "/metadata/labels/managed", value: "true"}]`,
 							},
 						},
@@ -118,19 +117,19 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		},
 		{
 			name: "no mutation when params condition not met",
-			policy: &admissionv1beta1.MutatingAdmissionPolicy{
+			policy: &admissionregv1.MutatingAdmissionPolicy{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
-				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
-					MatchConditions: []admissionv1beta1.MatchCondition{
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					MatchConditions: []admissionregv1.MatchCondition{
 						{
 							Name:       "check-enabled",
 							Expression: `params.enabled == true`,
 						},
 					},
-					Mutations: []admissionv1beta1.Mutation{
+					Mutations: []admissionregv1.Mutation{
 						{
-							PatchType: admissionv1beta1.PatchTypeJSONPatch,
-							JSONPatch: &admissionv1beta1.JSONPatch{
+							PatchType: admissionregv1.PatchTypeJSONPatch,
+							JSONPatch: &admissionregv1.JSONPatch{
 								Expression: `[JSONPatch{op: "add", path: "/metadata/labels/managed", value: "true"}]`,
 							},
 						},
@@ -155,13 +154,13 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		},
 		{
 			name: "add multiple labels from params object",
-			policy: &admissionv1beta1.MutatingAdmissionPolicy{
+			policy: &admissionregv1.MutatingAdmissionPolicy{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
-				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
-					Mutations: []admissionv1beta1.Mutation{
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionregv1.Mutation{
 						{
-							PatchType: admissionv1beta1.PatchTypeApplyConfiguration,
-							ApplyConfiguration: &admissionv1beta1.ApplyConfiguration{
+							PatchType: admissionregv1.PatchTypeApplyConfiguration,
+							ApplyConfiguration: &admissionregv1.ApplyConfiguration{
 								Expression: `Object{metadata: {"labels": params.defaultLabels}}`,
 							},
 						},
@@ -208,19 +207,19 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		},
 		{
 			name: "set replica count from params",
-			policy: &admissionv1beta1.MutatingAdmissionPolicy{
+			policy: &admissionregv1.MutatingAdmissionPolicy{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
-				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
-					MatchConditions: []admissionv1beta1.MatchCondition{
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					MatchConditions: []admissionregv1.MatchCondition{
 						{
 							Name:       "check-apply-limit",
 							Expression: `has(params.maxReplicas) && object.spec.replicas > params.maxReplicas`,
 						},
 					},
-					Mutations: []admissionv1beta1.Mutation{
+					Mutations: []admissionregv1.Mutation{
 						{
-							PatchType: admissionv1beta1.PatchTypeApplyConfiguration,
-							ApplyConfiguration: &admissionv1beta1.ApplyConfiguration{
+							PatchType: admissionregv1.PatchTypeApplyConfiguration,
+							ApplyConfiguration: &admissionregv1.ApplyConfiguration{
 								Expression: `Object{spec: {"replicas": params.maxReplicas}}`,
 							},
 						},
@@ -266,13 +265,13 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		},
 		{
 			name: "add annotation with value from nested params",
-			policy: &admissionv1beta1.MutatingAdmissionPolicy{
+			policy: &admissionregv1.MutatingAdmissionPolicy{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
-				Spec: admissionv1beta1.MutatingAdmissionPolicySpec{
-					Mutations: []admissionv1beta1.Mutation{
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionregv1.Mutation{
 						{
-							PatchType: admissionv1beta1.PatchTypeJSONPatch,
-							JSONPatch: &admissionv1beta1.JSONPatch{
+							PatchType: admissionregv1.PatchTypeJSONPatch,
+							JSONPatch: &admissionregv1.JSONPatch{
 								Expression: `[JSONPatch{op: "add", path: "/metadata/annotations", value: {"owner": params.team.owner, "contact": params.team.contact}}]`,
 							},
 						},
