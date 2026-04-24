@@ -14,4 +14,8 @@ var (
 	ErrUnsupportedV1Beta1Binding    = errors.New("ValidatingAdmissionPolicyBinding v1beta1 not supported, use v1")
 	ErrUnsupportedV1Beta1MutPolicy  = errors.New("MutatingAdmissionPolicy v1beta1 not supported, use v1")
 	ErrUnsupportedV1Beta1MutBinding = errors.New("MutatingAdmissionPolicyBinding v1beta1 not supported, use v1")
+	ErrConflictObject               = errors.New("conflict: object defined in multiple files")
+	ErrConflictOldObject            = errors.New("conflict: oldObject defined in multiple files")
+	ErrConflictNamespaceObject      = errors.New("conflict: namespaceObject defined in multiple files")
+	ErrConflictParams               = errors.New("conflict: params defined in multiple files")
 )

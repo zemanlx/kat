@@ -28,9 +28,8 @@ var (
 )
 
 // parseTestRequestFile parses a test request file and populates the TestRequest.
-// Handles *.request.yaml (simplified AdmissionRequest format), *.object.yaml (raw Kubernetes object),
-// *.oldObject.yaml (object for DELETE operations), *.params.yaml (policy parameters),
-// *.annotations.yaml (expected audit annotations), and *.warnings.txt (expected warnings).
+//
+//nolint:cyclop // Simple dispatch switch, each case is a one-liner.
 func parseTestRequestFile(testReq *testRequest) error {
 	data, err := os.ReadFile(testReq.FilePath)
 	if err != nil {
@@ -296,6 +295,7 @@ func loadAuxiliaryFiles(testReq *testRequest) error {
 func loadGoldFile(testReq *testRequest) error {
 	goldPath := strings.Replace(testReq.FilePath, ".object.yaml", ".gold.yaml", 1)
 	goldPath = strings.Replace(goldPath, ".request.yaml", ".gold.yaml", 1)
+
 	if _, err := os.Stat(goldPath); err != nil {
 		if os.IsNotExist(err) {
 			return nil

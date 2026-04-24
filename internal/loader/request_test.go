@@ -254,11 +254,13 @@ params:
   data:
     maxReplicas: "5"
 `
+
 	if err := os.WriteFile(requestFile, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	req := &testRequest{Name: "test.allow", FilePath: requestFile}
+
 	data, err := os.ReadFile(requestFile)
 	if err != nil {
 		t.Fatal(err)
@@ -277,6 +279,7 @@ params:
 	}
 }
 
+//nolint:funlen // Test function length is due to YAML test data.
 func TestParseRequestYAML_GoldFile(t *testing.T) {
 	t.Parallel()
 
@@ -318,6 +321,7 @@ spec:
 	}
 
 	req := &testRequest{Name: "test", FilePath: requestFile}
+
 	data, err := os.ReadFile(requestFile)
 	if err != nil {
 		t.Fatal(err)

@@ -659,37 +659,13 @@ func TestMergeTestRequests_Conflicts(t *testing.T) {
 		name    string
 		base    testRequest
 		overlay testRequest
-		wantErr string
+		wantErr error
 	}{
-		{
-			name:    "no conflict – base empty",
-			overlay: testRequest{Object: obj},
-			wantErr: "",
-		},
-		{
-			name:    "conflict – object in both",
-			base:    testRequest{Object: obj},
-			overlay: testRequest{Object: obj},
-			wantErr: "conflict: object defined in multiple files",
-		},
-		{
-			name:    "conflict – oldObject in both",
-			base:    testRequest{OldObject: obj},
-			overlay: testRequest{OldObject: obj},
-			wantErr: "conflict: oldObject defined in multiple files",
-		},
-		{
-			name:    "conflict – namespaceObject in both",
-			base:    testRequest{NamespaceObj: obj},
-			overlay: testRequest{NamespaceObj: obj},
-			wantErr: "conflict: namespaceObject defined in multiple files",
-		},
-		{
-			name:    "conflict – params in both",
-			base:    testRequest{Params: obj},
-			overlay: testRequest{Params: obj},
-			wantErr: "conflict: params defined in multiple files",
-		},
+		{name: "no conflict – base empty", overlay: testRequest{Object: obj}},
+		{name: "conflict – object", base: testRequest{Object: obj}, overlay: testRequest{Object: obj}, wantErr: ErrConflictObject},
+		{name: "conflict – oldObject", base: testRequest{OldObject: obj}, overlay: testRequest{OldObject: obj}, wantErr: ErrConflictOldObject},
+		{name: "conflict – namespaceObject", base: testRequest{NamespaceObj: obj}, overlay: testRequest{NamespaceObj: obj}, wantErr: ErrConflictNamespaceObject},
+		{name: "conflict – params", base: testRequest{Params: obj}, overlay: testRequest{Params: obj}, wantErr: ErrConflictParams},
 	}
 
 	for _, tt := range tests {
@@ -700,16 +676,13 @@ func TestMergeTestRequests_Conflicts(t *testing.T) {
 			overlay := tt.overlay
 			err := mergeTestRequests(&base, &overlay)
 
-			if tt.wantErr == "" {
+			if tt.wantErr == nil {
 				if err != nil {
 					t.Errorf("mergeTestRequests() unexpected error: %v", err)
 				}
 			} else {
-				if err == nil {
-					t.Fatalf("mergeTestRequests() expected error %q, got nil", tt.wantErr)
-				}
-				if err.Error() != tt.wantErr {
-					t.Errorf("mergeTestRequests() error = %q, want %q", err.Error(), tt.wantErr)
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("mergeTestRequests() error = %v, want %v", err, tt.wantErr)
 				}
 			}
 		})

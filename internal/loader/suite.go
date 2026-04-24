@@ -479,11 +479,24 @@ func newTempTestRequest(filePath, policyName string, expectAllowed bool) *testRe
 	}
 }
 
-//nolint:cyclop // Merge function with many fields
 func mergeTestRequests(testReq, tempReq *testRequest) error {
+	if err := mergeConflictFields(testReq, tempReq); err != nil {
+		return err
+	}
+
+	if tempReq.Request != nil {
+		mergeRequest(testReq, tempReq)
+	}
+
+	mergeSimpleFields(testReq, tempReq)
+
+	return nil
+}
+
+func mergeConflictFields(testReq, tempReq *testRequest) error {
 	if tempReq.Object != nil {
 		if testReq.Object != nil {
-			return fmt.Errorf("conflict: object defined in multiple files")
+			return ErrConflictObject
 		}
 
 		testReq.Object = tempReq.Object
@@ -491,7 +504,7 @@ func mergeTestRequests(testReq, tempReq *testRequest) error {
 
 	if tempReq.OldObject != nil {
 		if testReq.OldObject != nil {
-			return fmt.Errorf("conflict: oldObject defined in multiple files")
+			return ErrConflictOldObject
 		}
 
 		testReq.OldObject = tempReq.OldObject
@@ -499,7 +512,7 @@ func mergeTestRequests(testReq, tempReq *testRequest) error {
 
 	if tempReq.NamespaceObj != nil {
 		if testReq.NamespaceObj != nil {
-			return fmt.Errorf("conflict: namespaceObject defined in multiple files")
+			return ErrConflictNamespaceObject
 		}
 
 		testReq.NamespaceObj = tempReq.NamespaceObj
@@ -507,16 +520,16 @@ func mergeTestRequests(testReq, tempReq *testRequest) error {
 
 	if tempReq.Params != nil {
 		if testReq.Params != nil {
-			return fmt.Errorf("conflict: params defined in multiple files")
+			return ErrConflictParams
 		}
 
 		testReq.Params = tempReq.Params
 	}
 
-	if tempReq.Request != nil {
-		mergeRequest(testReq, tempReq)
-	}
+	return nil
+}
 
+func mergeSimpleFields(testReq, tempReq *testRequest) {
 	if tempReq.NamespaceName != "" {
 		testReq.NamespaceName = tempReq.NamespaceName
 	}
@@ -548,8 +561,6 @@ func mergeTestRequests(testReq, tempReq *testRequest) error {
 	if len(tempReq.Authorizer) > 0 {
 		testReq.Authorizer = tempReq.Authorizer
 	}
-
-	return nil
 }
 
 // mergeRequest merges fields from tempReq into testReq (tempReq takes precedence).
