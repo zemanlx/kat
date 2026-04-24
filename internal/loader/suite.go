@@ -380,6 +380,7 @@ func isTestFile(name string) bool {
 	return strings.HasSuffix(name, ".request.yaml") ||
 		strings.HasSuffix(name, ".object.yaml") ||
 		strings.HasSuffix(name, ".oldObject.yaml") ||
+		strings.HasSuffix(name, ".namespaceObject.yaml") ||
 		strings.HasSuffix(name, ".params.yaml") ||
 		strings.HasSuffix(name, ".annotations.yaml") ||
 		strings.HasSuffix(name, ".warnings.txt") ||
@@ -390,6 +391,7 @@ func testBaseName(name string) string {
 	baseName := strings.TrimSuffix(name, ".request.yaml")
 	baseName = strings.TrimSuffix(baseName, ".object.yaml")
 	baseName = strings.TrimSuffix(baseName, ".oldObject.yaml")
+	baseName = strings.TrimSuffix(baseName, ".namespaceObject.yaml")
 	baseName = strings.TrimSuffix(baseName, ".params.yaml")
 	baseName = strings.TrimSuffix(baseName, ".annotations.yaml")
 	baseName = strings.TrimSuffix(baseName, ".warnings.txt")
@@ -424,7 +426,11 @@ func buildTestRequest(baseName string, filePaths []string, policyNames []string)
 			return testReq
 		}
 
-		mergeTestRequests(testReq, tempReq)
+		if err := mergeTestRequests(testReq, tempReq); err != nil {
+			testReq.Error = err
+
+			return testReq
+		}
 	}
 
 	if !hasExplicitRequest && testReq.Request != nil {
@@ -474,21 +480,41 @@ func newTempTestRequest(filePath, policyName string, expectAllowed bool) *testRe
 }
 
 //nolint:cyclop // Merge function with many fields
-func mergeTestRequests(testReq, tempReq *testRequest) {
+func mergeTestRequests(testReq, tempReq *testRequest) error {
 	if tempReq.Object != nil {
+		if testReq.Object != nil {
+			return fmt.Errorf("conflict: object defined in multiple files")
+		}
+
 		testReq.Object = tempReq.Object
 	}
 
 	if tempReq.OldObject != nil {
+		if testReq.OldObject != nil {
+			return fmt.Errorf("conflict: oldObject defined in multiple files")
+		}
+
 		testReq.OldObject = tempReq.OldObject
+	}
+
+	if tempReq.NamespaceObj != nil {
+		if testReq.NamespaceObj != nil {
+			return fmt.Errorf("conflict: namespaceObject defined in multiple files")
+		}
+
+		testReq.NamespaceObj = tempReq.NamespaceObj
+	}
+
+	if tempReq.Params != nil {
+		if testReq.Params != nil {
+			return fmt.Errorf("conflict: params defined in multiple files")
+		}
+
+		testReq.Params = tempReq.Params
 	}
 
 	if tempReq.Request != nil {
 		mergeRequest(testReq, tempReq)
-	}
-
-	if tempReq.NamespaceObj != nil {
-		testReq.NamespaceObj = tempReq.NamespaceObj
 	}
 
 	if tempReq.NamespaceName != "" {
@@ -497,10 +523,6 @@ func mergeTestRequests(testReq, tempReq *testRequest) {
 
 	if tempReq.UserInfo != nil {
 		testReq.UserInfo = tempReq.UserInfo
-	}
-
-	if tempReq.Params != nil {
-		testReq.Params = tempReq.Params
 	}
 
 	if tempReq.ExpectAuditAnnotations != nil {
@@ -526,6 +548,8 @@ func mergeTestRequests(testReq, tempReq *testRequest) {
 	if len(tempReq.Authorizer) > 0 {
 		testReq.Authorizer = tempReq.Authorizer
 	}
+
+	return nil
 }
 
 // mergeRequest merges fields from tempReq into testReq (tempReq takes precedence).

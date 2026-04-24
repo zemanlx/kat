@@ -1,0 +1,27 @@
+operation: CREATE
+object:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: large-deployment-allinone
+  spec:
+    replicas: 10
+    selector:
+      matchLabels:
+        app: test
+    template:
+      metadata:
+        labels:
+          app: test
+      spec:
+        containers:
+        - name: nginx
+          image: nginx
+params:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: replica-limit-config
+    namespace: default
+  data:
+    maxReplicas: "5"

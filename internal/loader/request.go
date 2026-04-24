@@ -44,6 +44,8 @@ func parseTestRequestFile(testReq *testRequest) error {
 		return parseObjectYAML(testReq, data)
 	case strings.HasSuffix(testReq.FilePath, ".oldObject.yaml"):
 		return parseOldObjectYAML(testReq, data)
+	case strings.HasSuffix(testReq.FilePath, ".namespaceObject.yaml"):
+		return parseNamespaceObjectYAML(testReq, data)
 	case strings.HasSuffix(testReq.FilePath, ".params.yaml"):
 		return parseParamsYAML(testReq, data)
 	case strings.HasSuffix(testReq.FilePath, ".annotations.yaml"):
@@ -67,6 +69,7 @@ type simplifiedRequest struct {
 	UserInfo        *authenticationv1.UserInfo `json:"userInfo,omitempty"`
 	Object          map[string]interface{}     `json:"object,omitempty"`
 	OldObject       map[string]interface{}     `json:"oldObject,omitempty"`
+	Params          map[string]interface{}     `json:"params,omitempty"`
 	Options         map[string]interface{}     `json:"options,omitempty"`
 }
 
@@ -91,6 +94,15 @@ func parseRequestYAML(testReq *testRequest, data []byte) error {
 
 	if req.NamespaceObject != nil {
 		testReq.NamespaceObj = &unstructured.Unstructured{Object: req.NamespaceObject}
+	}
+
+	if req.Params != nil {
+		testReq.Params = &unstructured.Unstructured{Object: req.Params}
+	}
+
+	// Load gold file if present (for mutating policies tested via request.yaml).
+	if err := loadGoldFile(testReq); err != nil {
+		return err
 	}
 
 	return nil
@@ -267,13 +279,9 @@ func buildCreateRequestFromObject(testName string, obj *unstructured.Unstructure
 }
 
 func loadAuxiliaryFiles(testReq *testRequest) error {
-	// Look for corresponding .gold.yaml file (expected mutated object)
+	// Look for corresponding .gold.yaml file (expected mutated object).
+	// .params.yaml and .authorizer.yaml are registered file types handled by the suite loop.
 	if err := loadGoldFile(testReq); err != nil {
-		return err
-	}
-
-	// Look for corresponding .params.yaml file
-	if err := loadParamsFile(testReq); err != nil {
 		return err
 	}
 
@@ -282,16 +290,12 @@ func loadAuxiliaryFiles(testReq *testRequest) error {
 		return err
 	}
 
-	// Look for corresponding .authorizer.yaml file
-	if err := loadAuthorizerFile(testReq); err != nil {
-		return err
-	}
-
 	return nil
 }
 
 func loadGoldFile(testReq *testRequest) error {
 	goldPath := strings.Replace(testReq.FilePath, ".object.yaml", ".gold.yaml", 1)
+	goldPath = strings.Replace(goldPath, ".request.yaml", ".gold.yaml", 1)
 	if _, err := os.Stat(goldPath); err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -316,33 +320,6 @@ func loadGoldFile(testReq *testRequest) error {
 	return nil
 }
 
-func loadParamsFile(testReq *testRequest) error {
-	paramsPath := strings.Replace(testReq.FilePath, ".object.yaml", ".params.yaml", 1)
-	paramsPath = strings.Replace(paramsPath, ".request.yaml", ".params.yaml", 1)
-
-	if _, err := os.Stat(paramsPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-
-		return fmt.Errorf("stat params file: %w", err)
-	}
-
-	paramsData, err := os.ReadFile(paramsPath)
-	if err != nil {
-		return fmt.Errorf("failed to read params file: %w", err)
-	}
-
-	var paramsObj map[string]interface{}
-	if err := yaml.Unmarshal(paramsData, &paramsObj); err != nil {
-		return fmt.Errorf("failed to unmarshal params object: %w", err)
-	}
-
-	testReq.Params = &unstructured.Unstructured{Object: paramsObj}
-
-	return nil
-}
-
 func loadMessageFile(testReq *testRequest) error {
 	messagePath := strings.Replace(testReq.FilePath, ".object.yaml", ".message.txt", 1)
 	messagePath = strings.Replace(messagePath, ".request.yaml", ".message.txt", 1)
@@ -363,26 +340,6 @@ func loadMessageFile(testReq *testRequest) error {
 	testReq.ExpectMessage = strings.TrimSpace(string(messageData))
 
 	return nil
-}
-
-func loadAuthorizerFile(testReq *testRequest) error {
-	authPath := strings.Replace(testReq.FilePath, ".object.yaml", ".authorizer.yaml", 1)
-	authPath = strings.Replace(authPath, ".request.yaml", ".authorizer.yaml", 1)
-
-	if _, err := os.Stat(authPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-
-		return fmt.Errorf("stat authorizer file: %w", err)
-	}
-
-	authData, err := os.ReadFile(authPath)
-	if err != nil {
-		return fmt.Errorf("failed to read authorizer file: %w", err)
-	}
-
-	return parseAuthorizerYAML(testReq, authData)
 }
 
 // parseOldObjectYAML parses a raw Kubernetes object and creates an AdmissionRequest for DELETE operation.
@@ -422,23 +379,8 @@ func parseOldObjectYAML(testReq *testRequest, data []byte) error {
 	testReq.Request = admReq
 	testReq.NamespaceName = unstruct.GetNamespace()
 
-	// Look for corresponding .params.yaml file
-	paramsPath := strings.Replace(testReq.FilePath, ".oldObject.yaml", ".params.yaml", 1)
-	if _, err := os.Stat(paramsPath); err == nil {
-		paramsData, err := os.ReadFile(paramsPath)
-		if err != nil {
-			return fmt.Errorf("failed to read params file: %w", err)
-		}
-
-		var paramsObj map[string]interface{}
-		if err := yaml.Unmarshal(paramsData, &paramsObj); err != nil {
-			return fmt.Errorf("failed to unmarshal params object: %w", err)
-		}
-
-		testReq.Params = &unstructured.Unstructured{Object: paramsObj}
-	}
-
-	// Look for corresponding .message.txt file (expected error message)
+	// Look for corresponding .message.txt file (expected error message).
+	// .params.yaml is a registered file type handled by the suite loop.
 	messagePath := strings.Replace(testReq.FilePath, ".oldObject.yaml", ".message.txt", 1)
 	if _, err := os.Stat(messagePath); err == nil {
 		messageData, err := os.ReadFile(messagePath)
@@ -448,6 +390,25 @@ func parseOldObjectYAML(testReq *testRequest, data []byte) error {
 
 		testReq.ExpectMessage = strings.TrimSpace(string(messageData))
 	}
+
+	return nil
+}
+
+// parseNamespaceObjectYAML parses a Kubernetes Namespace object providing namespace context for the admission request.
+func parseNamespaceObjectYAML(testReq *testRequest, data []byte) error {
+	var obj map[string]interface{}
+	if err := yaml.Unmarshal(data, &obj); err != nil {
+		return fmt.Errorf("failed to unmarshal namespaceObject: %w", err)
+	}
+
+	nsGVK := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+	if err := validateWithScheme(obj, "namespaceObject", &nsGVK); err != nil {
+		return err
+	}
+
+	unstruct := &unstructured.Unstructured{Object: obj}
+	testReq.NamespaceObj = unstruct
+	testReq.NamespaceName = unstruct.GetName()
 
 	return nil
 }

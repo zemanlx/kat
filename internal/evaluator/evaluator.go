@@ -217,6 +217,14 @@ func validateTestResult(result *TestResult, expected *TestExpectation, actual *T
 		return chk
 	}
 
+	// If the policy mutated the object but no .gold.yaml was provided, fail.
+	if result.PatchedObject != nil && expected.Object == nil {
+		result.Passed = false
+		result.Message = "policy mutated the object but no .gold.yaml file was provided"
+
+		return result
+	}
+
 	result.Passed = true
 
 	return result

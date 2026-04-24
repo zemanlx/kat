@@ -1,4 +1,6 @@
 
+--- FAIL: add-default-labels/add-default-labels.missing-gold.yaml (0.00s)
+    policy mutated the object but no .gold.yaml file was provided
 --- FAIL: add-default-labels/add-default-labels.no-labels.yaml (0.00s)
     mutated object does not match expected:
     --- Expected
@@ -33,6 +35,8 @@ FAIL	block-team-ci-service-accounts	0.000s
 
 --- FAIL: conditional-policy/conditional.dev-single-replica.allow.yaml (0.00s)
     expected allowed=true, got allowed=false
+--- FAIL: conditional-policy/conditional.object-conflict.allow.yaml (0.00s)
+    test loading error: conflict: object defined in multiple files
 --- FAIL: conditional-policy/conditional.prod-ha.deny.yaml (0.00s)
     test loading error: failed to parse test file test-policies-fail/conditional-policy/tests/conditional.prod-ha.deny.object.yaml: object: invalid kubernetes object: strict decoding error: unknown field "spec.template.spec.container"
 FAIL	conditional-policy	0.000s
