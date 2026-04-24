@@ -273,10 +273,12 @@ Any check not explicitly mocked returns "NoOpinion".
 
 ### Operations
 
-- **CREATE** (default): Provide `.object.yaml` (or `object` in `.request.yaml`).
-- **UPDATE**: Provide both `.object.yaml` (new) and `.oldObject.yaml` (old). Operation is inferred automatically.
-- **DELETE**: Provide only `.oldObject.yaml`. Operation is inferred automatically.
+- **CREATE** (default): Provide `object` (via `.object.yaml` or in `.request.yaml`).
+- **UPDATE**: Provide both `object` and `oldObject`. Operation is inferred automatically.
+- **DELETE**: Provide only `oldObject`. Operation is inferred automatically.
 - **CONNECT**: Set `operation: CONNECT` in `.request.yaml`.
+
+Operation inference works the same way whether fields are in separate files or consolidated in `.request.yaml`. If you set `operation:` explicitly and it conflicts with what would be inferred from the fields present, `kat` reports an error.
 
 ## Features
 

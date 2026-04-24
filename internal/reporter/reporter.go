@@ -197,8 +197,8 @@ func (s *SuiteReporter) ReportFail(testName, message string) {
 }
 
 func (s *SuiteReporter) printIndented(message string) {
-	lines := strings.Split(message, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(message, "\n")
+	for line := range lines {
 		if line == "" {
 			fmt.Fprintln(s.rep.out)
 		} else {

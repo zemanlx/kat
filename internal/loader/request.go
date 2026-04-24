@@ -64,12 +64,12 @@ type simplifiedRequest struct {
 	SubResource     string                     `json:"subResource,omitempty"`
 	Name            string                     `json:"name,omitempty"`
 	Namespace       string                     `json:"namespace,omitempty"`
-	NamespaceObject map[string]interface{}     `json:"namespaceObject,omitempty"`
+	NamespaceObject map[string]any             `json:"namespaceObject,omitempty"`
 	UserInfo        *authenticationv1.UserInfo `json:"userInfo,omitempty"`
-	Object          map[string]interface{}     `json:"object,omitempty"`
-	OldObject       map[string]interface{}     `json:"oldObject,omitempty"`
-	Params          map[string]interface{}     `json:"params,omitempty"`
-	Options         map[string]interface{}     `json:"options,omitempty"`
+	Object          map[string]any             `json:"object,omitempty"`
+	OldObject       map[string]any             `json:"oldObject,omitempty"`
+	Params          map[string]any             `json:"params,omitempty"`
+	Options         map[string]any             `json:"options,omitempty"`
 }
 
 // parseRequestYAML parses a simplified request format.
@@ -131,7 +131,7 @@ func validateSimplifiedRequest(req *simplifiedRequest) error {
 	return nil
 }
 
-func validateWithScheme(obj map[string]interface{}, field string, expectedGVK *schema.GroupVersionKind) error {
+func validateWithScheme(obj map[string]any, field string, expectedGVK *schema.GroupVersionKind) error {
 	if obj == nil {
 		return nil
 	}
@@ -149,7 +149,7 @@ func validateWithScheme(obj map[string]interface{}, field string, expectedGVK *s
 	return validateStructureStrict(obj, field, expectedGVK, u.GetKind())
 }
 
-func validateStructureStrict(obj map[string]interface{}, field string, expectedGVK *schema.GroupVersionKind, currentKind string) error {
+func validateStructureStrict(obj map[string]any, field string, expectedGVK *schema.GroupVersionKind, currentKind string) error {
 	// Decode using the default Kubernetes scheme to strictly validate known types
 	data, err := json.Marshal(obj)
 	if err != nil {
@@ -235,7 +235,7 @@ func buildAdmissionRequestFromSimplified(req *simplifiedRequest, testReq *testRe
 
 // parseObjectYAML parses a raw Kubernetes object and creates an AdmissionRequest for it.
 func parseObjectYAML(testReq *testRequest, data []byte) error {
-	var obj map[string]interface{}
+	var obj map[string]any
 	if err := yaml.Unmarshal(data, &obj); err != nil {
 		return fmt.Errorf("failed to unmarshal object: %w", err)
 	}
@@ -246,7 +246,7 @@ func parseObjectYAML(testReq *testRequest, data []byte) error {
 
 	unstruct := &unstructured.Unstructured{Object: obj}
 	testReq.Object = unstruct
-	testReq.Request = buildCreateRequestFromObject(testReq.Name, unstruct)
+	testReq.Request = buildRequestFromObject(testReq.Name, unstruct)
 	testReq.NamespaceName = unstruct.GetNamespace()
 
 	if err := loadAuxiliaryFiles(testReq); err != nil {
@@ -256,12 +256,13 @@ func parseObjectYAML(testReq *testRequest, data []byte) error {
 	return nil
 }
 
-func buildCreateRequestFromObject(testName string, obj *unstructured.Unstructured) *admissionv1.AdmissionRequest {
+// buildRequestFromObject creates a partial AdmissionRequest with resource metadata.
+// Operation is not set here — it is inferred centrally by inferOrValidateOperation.
+func buildRequestFromObject(testName string, obj *unstructured.Unstructured) *admissionv1.AdmissionRequest {
 	gvk := obj.GroupVersionKind()
 
 	return &admissionv1.AdmissionRequest{
-		UID:       types.UID("test-" + testName),
-		Operation: admissionv1.Create,
+		UID: types.UID("test-" + testName),
 		Kind: metav1.GroupVersionKind{
 			Group:   gvk.Group,
 			Version: gvk.Version,
@@ -309,7 +310,7 @@ func loadGoldFile(testReq *testRequest) error {
 		return fmt.Errorf("failed to read gold file: %w", err)
 	}
 
-	var goldObj map[string]interface{}
+	var goldObj map[string]any
 	if err := yaml.Unmarshal(goldData, &goldObj); err != nil {
 		return fmt.Errorf("failed to unmarshal gold object: %w", err)
 	}
@@ -342,10 +343,11 @@ func loadMessageFile(testReq *testRequest) error {
 	return nil
 }
 
-// parseOldObjectYAML parses a raw Kubernetes object and creates an AdmissionRequest for DELETE operation.
-// This is used for testing deletion policies where only oldObject is relevant.
+// parseOldObjectYAML parses a raw Kubernetes object for the oldObject field.
+// Operation is not set here — it is inferred centrally by inferOrValidateOperation
+// (DELETE if only oldObject is present, UPDATE if both object and oldObject are present).
 func parseOldObjectYAML(testReq *testRequest, data []byte) error {
-	var obj map[string]interface{}
+	var obj map[string]any
 	if err := yaml.Unmarshal(data, &obj); err != nil {
 		return fmt.Errorf("failed to unmarshal oldObject: %w", err)
 	}
@@ -357,11 +359,10 @@ func parseOldObjectYAML(testReq *testRequest, data []byte) error {
 	unstruct := &unstructured.Unstructured{Object: obj}
 	testReq.OldObject = unstruct
 
-	// Build AdmissionRequest for DELETE operation
+	// Build a partial AdmissionRequest with resource metadata (operation set later by inference).
 	gvk := unstruct.GroupVersionKind()
-	admReq := &admissionv1.AdmissionRequest{
-		UID:       types.UID("test-" + testReq.Name),
-		Operation: admissionv1.Delete,
+	testReq.Request = &admissionv1.AdmissionRequest{
+		UID: types.UID("test-" + testReq.Name),
 		Kind: metav1.GroupVersionKind{
 			Group:   gvk.Group,
 			Version: gvk.Version,
@@ -376,7 +377,6 @@ func parseOldObjectYAML(testReq *testRequest, data []byte) error {
 		Namespace: unstruct.GetNamespace(),
 	}
 
-	testReq.Request = admReq
 	testReq.NamespaceName = unstruct.GetNamespace()
 
 	// Look for corresponding .message.txt file (expected error message).
@@ -396,7 +396,7 @@ func parseOldObjectYAML(testReq *testRequest, data []byte) error {
 
 // parseNamespaceObjectYAML parses a Kubernetes Namespace object providing namespace context for the admission request.
 func parseNamespaceObjectYAML(testReq *testRequest, data []byte) error {
-	var obj map[string]interface{}
+	var obj map[string]any
 	if err := yaml.Unmarshal(data, &obj); err != nil {
 		return fmt.Errorf("failed to unmarshal namespaceObject: %w", err)
 	}
@@ -416,7 +416,7 @@ func parseNamespaceObjectYAML(testReq *testRequest, data []byte) error {
 // loadGoldFile loads the expected object from a .gold.yaml file.
 // parseParamsYAML parses a policy parameters file (ConfigMap or custom resource).
 func parseParamsYAML(testReq *testRequest, data []byte) error {
-	var obj map[string]interface{}
+	var obj map[string]any
 	if err := yaml.Unmarshal(data, &obj); err != nil {
 		return fmt.Errorf("failed to unmarshal params: %w", err)
 	}
@@ -475,13 +475,13 @@ func parseAuthorizerYAML(testReq *testRequest, data []byte) error {
 	return nil
 }
 
-// InferOperation determines the Kubernetes admission operation based on which YAML files are present.
+// inferOperation determines the Kubernetes admission operation based on which YAML files are present.
 // If requestOpStr is non-empty, it's used directly (for explicit CONNECT operations).
 // Otherwise, operation is inferred from the presence of object/oldObject files:
 //   - object only -> CREATE
 //   - oldObject only -> DELETE
 //   - both object and oldObject -> UPDATE
-func InferOperation(hasObject, hasOldObject bool, requestOpStr string) (string, error) {
+func inferOperation(hasObject, hasOldObject bool, requestOpStr string) (string, error) {
 	// Explicit operation from request.yaml (e.g., CONNECT)
 	if requestOpStr != "" {
 		return requestOpStr, nil

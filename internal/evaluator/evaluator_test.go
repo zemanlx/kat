@@ -1544,10 +1544,10 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 	}
 
 	validPod := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "v1",
 			"kind":       "Pod",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      "test-pod",
 				"namespace": "default",
 			},
@@ -1646,13 +1646,13 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 				Object:        validPod,
 				ExpectAllowed: true,
 				ExpectedObject: &unstructured.Unstructured{
-					Object: map[string]interface{}{
+					Object: map[string]any{
 						"apiVersion": "v1",
 						"kind":       "Pod",
-						"metadata": map[string]interface{}{
+						"metadata": map[string]any{
 							"name":      "test-pod",
 							"namespace": "default",
-							"labels": map[string]interface{}{
+							"labels": map[string]any{
 								"foo": "bar",
 							},
 						},
@@ -1679,13 +1679,13 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 				Object:        validPod,
 				ExpectAllowed: true,
 				ExpectedObject: &unstructured.Unstructured{ // Expect different label
-					Object: map[string]interface{}{
+					Object: map[string]any{
 						"apiVersion": "v1",
 						"kind":       "Pod",
-						"metadata": map[string]interface{}{
+						"metadata": map[string]any{
 							"name":      "test-pod",
 							"namespace": "default",
-							"labels": map[string]interface{}{
+							"labels": map[string]any{
 								"foo": "baz",
 							},
 						},

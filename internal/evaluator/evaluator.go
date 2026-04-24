@@ -353,12 +353,12 @@ func checkAuditAnnotations(expected *TestExpectation, actual *TestOutcome) *Test
 
 		expectedYAML, err := yaml.Marshal(expected.AuditAnnotations)
 		if err != nil {
-			expectedYAML = []byte(fmt.Sprintf("%+v", expected.AuditAnnotations))
+			expectedYAML = fmt.Appendf(nil, "%+v", expected.AuditAnnotations)
 		}
 
 		actualYAML, err := yaml.Marshal(actualFiltered)
 		if err != nil {
-			actualYAML = []byte(fmt.Sprintf("%+v", actualFiltered))
+			actualYAML = fmt.Appendf(nil, "%+v", actualFiltered)
 		}
 
 		diff := getDiff(string(expectedYAML), string(actualYAML))
@@ -397,12 +397,12 @@ func checkMutatedObject(expected *TestExpectation, actual *TestOutcome) *TestRes
 		// Convert to YAML for consistent diffing
 		expectedYAML, err := yaml.Marshal(expected.Object.Object)
 		if err != nil {
-			expectedYAML = []byte(fmt.Sprintf("%+v", expected.Object.Object))
+			expectedYAML = fmt.Appendf(nil, "%+v", expected.Object.Object)
 		}
 
 		actualYAML, err := yaml.Marshal(actual.Object.Object)
 		if err != nil {
-			actualYAML = []byte(fmt.Sprintf("%+v", actual.Object.Object))
+			actualYAML = fmt.Appendf(nil, "%+v", actual.Object.Object)
 		}
 
 		// Generate a standard unified diff
@@ -1089,7 +1089,7 @@ func appendPatchOperations(iter traits.Iterator, result *jsonpatch.Patch) error 
 }
 
 func buildJSONPatchOperation(value ref.Val) (jsonpatch.Operation, error) {
-	patchObj, err := value.ConvertToNative(reflect.TypeOf(&mutation.JSONPatchVal{}))
+	patchObj, err := value.ConvertToNative(reflect.TypeFor[*mutation.JSONPatchVal]())
 	if err != nil {
 		return nil, fmt.Errorf("convert patch element: %w", err)
 	}
@@ -1100,15 +1100,15 @@ func buildJSONPatchOperation(value ref.Val) (jsonpatch.Operation, error) {
 	}
 
 	resultOp := jsonpatch.Operation{}
-	resultOp["op"] = ptr.To(json.RawMessage(strconv.Quote(op.Op)))
-	resultOp["path"] = ptr.To(json.RawMessage(strconv.Quote(op.Path)))
+	resultOp["op"] = new(json.RawMessage(strconv.Quote(op.Op)))
+	resultOp["path"] = new(json.RawMessage(strconv.Quote(op.Path)))
 
 	if len(op.From) > 0 {
-		resultOp["from"] = ptr.To(json.RawMessage(strconv.Quote(op.From)))
+		resultOp["from"] = new(json.RawMessage(strconv.Quote(op.From)))
 	}
 
 	if op.Val != nil {
-		converted, err := op.Val.ConvertToNative(reflect.TypeOf(&structpb.Value{}))
+		converted, err := op.Val.ConvertToNative(reflect.TypeFor[*structpb.Value]())
 		if err != nil {
 			return nil, fmt.Errorf("convert patch value: %w", err)
 		}
