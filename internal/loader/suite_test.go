@@ -530,7 +530,9 @@ func TestMergeTestRequests(t *testing.T) {
 		ExpectMessage: "merged",
 	}
 
-	mergeTestRequests(testReq, tempReq)
+	if err := mergeTestRequests(testReq, tempReq); err != nil {
+		t.Fatalf("mergeTestRequests() unexpected error: %v", err)
+	}
 
 	if testReq.Request.Operation != "UPDATE" {
 		t.Errorf("Expected Operation merged to UPDATE, got %s", testReq.Request.Operation)
@@ -645,6 +647,45 @@ func TestMergeRequest_AllFields(t *testing.T) {
 
 	if testReq.Request.Options.Raw == nil {
 		t.Error("Options not merged")
+	}
+}
+
+func TestMergeTestRequests_Conflicts(t *testing.T) {
+	t.Parallel()
+
+	obj := &unstructured.Unstructured{Object: map[string]interface{}{"kind": "Pod"}}
+
+	tests := []struct {
+		name    string
+		base    testRequest
+		overlay testRequest
+		wantErr error
+	}{
+		{name: "no conflict – base empty", overlay: testRequest{Object: obj}},
+		{name: "conflict – object", base: testRequest{Object: obj}, overlay: testRequest{Object: obj}, wantErr: ErrConflictObject},
+		{name: "conflict – oldObject", base: testRequest{OldObject: obj}, overlay: testRequest{OldObject: obj}, wantErr: ErrConflictOldObject},
+		{name: "conflict – namespaceObject", base: testRequest{NamespaceObj: obj}, overlay: testRequest{NamespaceObj: obj}, wantErr: ErrConflictNamespaceObject},
+		{name: "conflict – params", base: testRequest{Params: obj}, overlay: testRequest{Params: obj}, wantErr: ErrConflictParams},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			base := tt.base
+			overlay := tt.overlay
+			err := mergeTestRequests(&base, &overlay)
+
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("mergeTestRequests() unexpected error: %v", err)
+				}
+			} else {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("mergeTestRequests() error = %v, want %v", err, tt.wantErr)
+				}
+			}
+		})
 	}
 }
 

@@ -1,6 +1,8 @@
 package loader
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -225,5 +227,119 @@ func TestInferOperation(t *testing.T) {
 				t.Errorf("InferOperation() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseRequestYAML_Params(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	requestFile := filepath.Join(dir, "test.allow.request.yaml")
+	content := `
+operation: CREATE
+object:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: test-pod
+  spec:
+    containers:
+    - name: nginx
+      image: nginx
+params:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: my-config
+  data:
+    maxReplicas: "5"
+`
+
+	if err := os.WriteFile(requestFile, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := &testRequest{Name: "test.allow", FilePath: requestFile}
+
+	data, err := os.ReadFile(requestFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := parseRequestYAML(req, data); err != nil {
+		t.Fatalf("parseRequestYAML() error = %v", err)
+	}
+
+	if req.Params == nil {
+		t.Fatal("expected Params to be set, got nil")
+	}
+
+	if req.Params.GetName() != "my-config" {
+		t.Errorf("Params.Name = %q, want %q", req.Params.GetName(), "my-config")
+	}
+}
+
+//nolint:funlen // Test function length is due to YAML test data.
+func TestParseRequestYAML_GoldFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	requestFile := filepath.Join(dir, "test.request.yaml")
+	goldFile := filepath.Join(dir, "test.gold.yaml")
+
+	requestContent := `
+operation: CREATE
+object:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: test-pod
+  spec:
+    containers:
+    - name: nginx
+      image: nginx
+`
+	goldContent := `
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+  labels:
+    injected: "true"
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+`
+
+	if err := os.WriteFile(requestFile, []byte(requestContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(goldFile, []byte(goldContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := &testRequest{Name: "test", FilePath: requestFile}
+
+	data, err := os.ReadFile(requestFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := parseRequestYAML(req, data); err != nil {
+		t.Fatalf("parseRequestYAML() error = %v", err)
+	}
+
+	if !req.ExpectMutated {
+		t.Error("expected ExpectMutated=true when .gold.yaml is present")
+	}
+
+	if req.ExpectedObject == nil {
+		t.Fatal("expected ExpectedObject to be set")
+	}
+
+	if req.ExpectedObject.GetName() != "test-pod" {
+		t.Errorf("ExpectedObject.Name = %q, want %q", req.ExpectedObject.GetName(), "test-pod")
 	}
 }

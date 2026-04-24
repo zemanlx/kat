@@ -380,6 +380,7 @@ func isTestFile(name string) bool {
 	return strings.HasSuffix(name, ".request.yaml") ||
 		strings.HasSuffix(name, ".object.yaml") ||
 		strings.HasSuffix(name, ".oldObject.yaml") ||
+		strings.HasSuffix(name, ".namespaceObject.yaml") ||
 		strings.HasSuffix(name, ".params.yaml") ||
 		strings.HasSuffix(name, ".annotations.yaml") ||
 		strings.HasSuffix(name, ".warnings.txt") ||
@@ -390,6 +391,7 @@ func testBaseName(name string) string {
 	baseName := strings.TrimSuffix(name, ".request.yaml")
 	baseName = strings.TrimSuffix(baseName, ".object.yaml")
 	baseName = strings.TrimSuffix(baseName, ".oldObject.yaml")
+	baseName = strings.TrimSuffix(baseName, ".namespaceObject.yaml")
 	baseName = strings.TrimSuffix(baseName, ".params.yaml")
 	baseName = strings.TrimSuffix(baseName, ".annotations.yaml")
 	baseName = strings.TrimSuffix(baseName, ".warnings.txt")
@@ -424,7 +426,11 @@ func buildTestRequest(baseName string, filePaths []string, policyNames []string)
 			return testReq
 		}
 
-		mergeTestRequests(testReq, tempReq)
+		if err := mergeTestRequests(testReq, tempReq); err != nil {
+			testReq.Error = err
+
+			return testReq
+		}
 	}
 
 	if !hasExplicitRequest && testReq.Request != nil {
@@ -473,34 +479,63 @@ func newTempTestRequest(filePath, policyName string, expectAllowed bool) *testRe
 	}
 }
 
-//nolint:cyclop // Merge function with many fields
-func mergeTestRequests(testReq, tempReq *testRequest) {
-	if tempReq.Object != nil {
-		testReq.Object = tempReq.Object
-	}
-
-	if tempReq.OldObject != nil {
-		testReq.OldObject = tempReq.OldObject
+func mergeTestRequests(testReq, tempReq *testRequest) error {
+	if err := mergeConflictFields(testReq, tempReq); err != nil {
+		return err
 	}
 
 	if tempReq.Request != nil {
 		mergeRequest(testReq, tempReq)
 	}
 
+	mergeSimpleFields(testReq, tempReq)
+
+	return nil
+}
+
+func mergeConflictFields(testReq, tempReq *testRequest) error {
+	if tempReq.Object != nil {
+		if testReq.Object != nil {
+			return ErrConflictObject
+		}
+
+		testReq.Object = tempReq.Object
+	}
+
+	if tempReq.OldObject != nil {
+		if testReq.OldObject != nil {
+			return ErrConflictOldObject
+		}
+
+		testReq.OldObject = tempReq.OldObject
+	}
+
 	if tempReq.NamespaceObj != nil {
+		if testReq.NamespaceObj != nil {
+			return ErrConflictNamespaceObject
+		}
+
 		testReq.NamespaceObj = tempReq.NamespaceObj
 	}
 
+	if tempReq.Params != nil {
+		if testReq.Params != nil {
+			return ErrConflictParams
+		}
+
+		testReq.Params = tempReq.Params
+	}
+
+	return nil
+}
+
+func mergeSimpleFields(testReq, tempReq *testRequest) {
 	if tempReq.NamespaceName != "" {
 		testReq.NamespaceName = tempReq.NamespaceName
 	}
 
 	if tempReq.UserInfo != nil {
 		testReq.UserInfo = tempReq.UserInfo
-	}
-
-	if tempReq.Params != nil {
-		testReq.Params = tempReq.Params
 	}
 
 	if tempReq.ExpectAuditAnnotations != nil {

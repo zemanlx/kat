@@ -1,0 +1,22 @@
+operation: CREATE
+object:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: test-pod-allinone
+    namespace: default
+    labels:
+      app: test
+  spec:
+    containers:
+    - name: nginx
+      image: nginx:latest
+params:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: label-config
+    namespace: default
+  data:
+    labelKey: "managed-by"
+    labelValue: "kat-test"

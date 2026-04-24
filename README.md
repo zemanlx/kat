@@ -13,17 +13,46 @@
 
 `kat` is a lightweight, local testing tool for Kubernetes Admission Policies (ValidatingAdmissionPolicy and MutatingAdmissionPolicy). It allows you to write test cases using standard Kubernetes manifests and verify your policies' behavior without needing a running cluster.
 
-## Features
+## Quick Start
 
-- **Standard Kubernetes YAML**: Write tests using plain K8s manifests - no new DSL to learn.
-- **Full CEL Support**: Uses the official Kubernetes CEL libraries for 100% accurate evaluation.
-- **Comprehensive Policy Support**:
-  - `ValidatingAdmissionPolicy` (Allow, Deny, Warn, Audit)
-  - `MutatingAdmissionPolicy` (Mutate, No-op)
-- **All Operations**: Supports CREATE, UPDATE, DELETE, and CONNECT operations.
-- **Golden File Testing**: Automatically verifies mutated objects against expected golden files.
-- **Rich Context**: Simulate complex scenarios with `userInfo`, `namespaceObject`, and `matchConditions`.
-- **Parameter Testing**: Test parameter-driven policies (`paramKind`/`paramRef`).
+Given a policy like this:
+
+```text
+my-policy/
+├── policy.yaml
+└── tests/
+    ├── my-policy.good-pod.allow.object.yaml
+    └── my-policy.bad-pod.deny.object.yaml
+```
+
+The simplest test is just a Kubernetes object:
+
+```yaml
+# tests/my-policy.good-pod.allow.object.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-pod
+  labels:
+    owner: platform-team
+```
+
+```yaml
+# tests/my-policy.bad-pod.deny.object.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-pod
+  # Missing required label
+```
+
+Run it:
+
+```bash
+kat .
+```
+
+That's it. `kat` discovers the policy, finds the tests, and evaluates them. The filename tells `kat` everything: which policy to test (`my-policy`), what to expect (`allow` or `deny`), and what the file contains (`object`).
 
 ## Installation
 
@@ -41,19 +70,13 @@ go install
 
 ## Usage
 
-The recommended way to use `kat` is to run it from the root of your repository. It will automatically discover and execute all tests found in `tests/` directories recursively.
+Run from the root of your repository — `kat` will automatically discover and execute all tests found in `tests/` directories recursively:
 
 ```bash
 kat .
 ```
 
-This commands will:
-
-1. Find all `tests` directories.
-2. Locate the corresponding Policy and Binding for each test (by looking up in the directory tree).
-3. Execute all found tests.
-
-You can also target specific directories or files:
+Target specific directories or files:
 
 ```bash
 # Run tests for a specific policy
@@ -90,10 +113,6 @@ Supported filenames include:
 
 **Note:** You can define multiple policies and bindings in a single file (separated by `---`), or split them across multiple files. The tool loads all valid policy/binding resources found in the directory.
 
-This allows you to keep your tests co-located with your policy definitions. You just need to add a `tests/` folder alongside your manifests.
-
-**Example Layout:**
-
 ```text
 policies/
 ├── team-label-policy/
@@ -106,119 +125,168 @@ policies/
 │       └── ...
 ```
 
-In this setup, running `kat .` at the root will automatically find the `tests` directory, associate it with the policy in the parent `team-label-policy` directory, and execute the tests.
+Running `kat .` at the root will automatically find the `tests` directory, associate it with the policy in the parent directory, and execute the tests.
 
 ## Writing Tests
-
-Tests are defined by file naming conventions. The filename structure determines the test type and expectations.
 
 ### File Naming Convention
 
 Pattern: `<policy-name>.<test-name>.<expect>.<type>.yaml`
 
-**Requirement:** The `<policy-name>` prefix must match the `metadata.name` of the policy being tested.
-*(If a directory contains only a single policy, kats automatically associates all tests with that policy).*
+The `<policy-name>` prefix must match the `metadata.name` of the policy being tested. If a directory contains only a single policy, `kat` automatically associates all tests with that policy.
 
-- **expect**: `allow`, `deny`, `warn`, `audit` (for Validating)
-- **type**: `object`, `oldObject`, `request`, `params`
+| Part | Values | Description |
+|------|--------|-------------|
+| **expect** | `allow`, `deny`, `warn`, `audit` | Expected admission outcome |
+| **type** | `object`, `oldObject`, `request`, `params`, `namespaceObject`, `authorizer`, `annotations`, `warnings` | What the file contains |
 
-### Validating Admission Policy
+Multiple files with the same `<policy-name>.<test-name>.<expect>` prefix are merged into a single test case.
 
-**1. Expect Allow:**
-Create a file ending in `.allow.object.yaml`.
+### Two Ways to Write Tests
 
-```yaml
-# my-policy.test-1.allow.object.yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: allowed-pod
-  labels:
-    cost-center: "123"
-```
+You can provide test inputs as **a single `.request.yaml`** file or as **separate files per field** — or a mix of both.
 
-**2. Expect Deny:**
-Create a file ending in `.deny.object.yaml`.
+#### All-in-One: `.request.yaml`
+
+A `.request.yaml` file can contain the object, params, namespace context, and user info all in one place. This is the simplest way to write tests that need more than just an object.
 
 ```yaml
-# my-policy.test-2.deny.object.yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: denied-pod
-  # Missing required labels
+# my-policy.dev-deploy.allow.request.yaml
+operation: CREATE
+namespace: development
+object:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: dev-deployment
+    namespace: development
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: test
+    template:
+      metadata:
+        labels:
+          app: test
+      spec:
+        containers:
+        - name: nginx
+          image: nginx
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: development
+    labels:
+      environment: dev
+params:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: policy-config
+  data:
+    maxReplicas: "10"
+userInfo:
+  username: "developer@example.com"
 ```
 
-**3. Expect Specific Message:**
-Add a `.message.txt` file side-by-side.
+Available fields in `.request.yaml`:
+
+| Field | Description |
+|-------|-------------|
+| `operation` | `CREATE`, `UPDATE`, `DELETE`, or `CONNECT` |
+| `object` | The object being admitted |
+| `oldObject` | Previous version (for UPDATE/DELETE) |
+| `params` | Parameter resource (`paramKind`/`paramRef`) |
+| `namespaceObject` | Namespace context with labels/annotations |
+| `userInfo` | User making the request |
+| `namespace` | Shorthand for request namespace |
+| `name` | Shorthand for request name |
+| `subResource` | Sub-resource being accessed (e.g., `status`) |
+| `options` | Additional options for the request |
+
+#### Split Files
+
+For simpler tests, you can use separate files — each containing just one piece:
 
 ```text
-# my-policy.test-2.deny.message.txt
-Pod must have a cost-center label
+my-policy.deploy-test.allow.object.yaml      # The object being admitted
+my-policy.deploy-test.allow.params.yaml      # Policy parameters
+my-policy.deploy-test.allow.request.yaml     # Additional context (userInfo, namespace, etc.)
 ```
 
-### Mutating Admission Policy
+This keeps individual files small and readable. All files sharing the same base name (`my-policy.deploy-test.allow`) are merged into one test case.
 
-**1. Mutation Test:**
-Provide the input object and the expected output (golden file).
+**Conflict detection:** If the same field (e.g., `object`) is defined in both `.request.yaml` and a separate `.object.yaml`, `kat` reports an error.
 
-- Input: `my-policy.test-1.object.yaml`
-- Expected: `my-policy.test-1.gold.yaml`
+### Expected Outcomes
 
-If the actual mutation result differs from the golden file, the test fails and prints a diff.
-
-### Advanced Scenarios
-
-#### Request Context (`.request.yaml`)
-
-Use a `.request.yaml` file to provide additional admission context like user info or namespace details.
-
+**Allow** — the object is admitted:
 ```yaml
-# my-policy.test-1.allow.request.yaml
-operation: CREATE
-userInfo:
-  username: "system:serviceaccount:kube-system:job-controller"
-namespaceObject:
-  metadata:
-    labels:
-      environment: production
+# my-policy.good-pod.allow.object.yaml
 ```
 
-#### Parameters (`.params.yaml`)
-
-For policies using `paramKind`, provide the parameter resource.
-
-```yaml
-# my-policy.test-1.allow.params.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: policy-config
-data:
-  excludedNamespaces: "kube-system,monitoring"
+**Deny** — the request is rejected. Add a `.message.txt` to verify the exact error:
+```text
+# my-policy.bad-pod.deny.message.txt
+All workloads must have an 'owner' label
 ```
 
-#### Authorizer Mocking (`.authorizer.yaml`)
+**Warn** — admitted with warnings. Add a `.warnings.txt`:
+```text
+# my-policy.old-api.warn.warnings.txt
+Deprecated API version, migrate to apps/v1
+```
 
-You can mock Kubernetes Authorizer responses (SubjectAccessReview) for policies that use `authorizer` checks in CEL.
-Create a `.authorizer.yaml` file side-by-side with your test files.
+**Audit** — admitted with audit annotations. Add an `.annotations.yaml`:
+```yaml
+# my-policy.flagged.audit.annotations.yaml
+audit-annotation-key: "violation detected"
+```
+
+### Mutating Policies
+
+For mutating policies, provide a **golden file** (`.gold.yaml`) with the expected output:
+
+```text
+my-policy.add-labels.object.yaml    # Input object
+my-policy.add-labels.gold.yaml      # Expected object after mutation
+```
+
+If the actual mutation result differs from the golden file, the test fails with a diff. This also works with all-in-one `.request.yaml` files — just place a `.gold.yaml` alongside it.
+
+### Authorizer Mocking
+
+Mock Kubernetes Authorizer responses (SubjectAccessReview) for policies using `authorizer` in CEL:
 
 ```yaml
-# my-policy.test-1.allow.authorizer.yaml
+# my-policy.check-perms.deny.authorizer.yaml
 - group: ""
   resource: "pods"
-  subresource: ""
   namespace: "default"
   verb: "create"
   decision: "allow"
 ```
 
-The mock matches requests based on group, resource, subresource, namespace, and verb. By default, any check not explicitly mocked will return "NoOpinion" (which usually results in a denial or failed check depending on policy logic).
+Any check not explicitly mocked returns "NoOpinion".
 
-#### Operations (UPDATE / DELETE)
+### Operations
 
-- **UPDATE**: Provide both `.object.yaml` (new) and `.oldObject.yaml` (old).
-- **DELETE**: Provide only `.oldObject.yaml` (resource being deleted).
+- **CREATE** (default): Provide `.object.yaml` (or `object` in `.request.yaml`).
+- **UPDATE**: Provide both `.object.yaml` (new) and `.oldObject.yaml` (old). Operation is inferred automatically.
+- **DELETE**: Provide only `.oldObject.yaml`. Operation is inferred automatically.
+- **CONNECT**: Set `operation: CONNECT` in `.request.yaml`.
+
+## Features
+
+- **Standard Kubernetes YAML** — no new DSL to learn
+- **Full CEL Support** — uses official Kubernetes CEL libraries for 100% accurate evaluation
+- **Comprehensive Policy Support** — `ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy`
+- **All Operations** — CREATE, UPDATE, DELETE, CONNECT
+- **Golden File Testing** — verifies mutated objects against expected output
+- **Rich Context** — `userInfo`, `namespaceObject`, `matchConditions`, authorizer mocking
+- **Parameter Testing** — `paramKind`/`paramRef` with ConfigMaps or custom resources
 
 ## Examples
 

@@ -1,0 +1,28 @@
+operation: CREATE
+namespace: development
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: development
+    labels:
+      environment: dev
+object:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: dev-deployment-allinone
+    namespace: development
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: test
+    template:
+      metadata:
+        labels:
+          app: test
+      spec:
+        containers:
+        - name: nginx
+          image: nginx
