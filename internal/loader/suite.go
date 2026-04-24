@@ -411,13 +411,7 @@ func buildTestRequest(baseName string, filePaths []string, policyNames []string)
 		ExpectAllowed: expectAllowed,
 	}
 
-	var hasExplicitRequest bool
-
 	for _, filePath := range filePaths {
-		if strings.HasSuffix(filePath, ".request.yaml") {
-			hasExplicitRequest = true
-		}
-
 		tempReq := newTempTestRequest(filePath, matchedPolicyName, expectAllowed)
 
 		if err := parseTestRequestFile(tempReq); err != nil {
@@ -433,14 +427,45 @@ func buildTestRequest(baseName string, filePaths []string, policyNames []string)
 		}
 	}
 
-	if !hasExplicitRequest && testReq.Request != nil {
-		op, err := InferOperation(testReq.Object != nil, testReq.OldObject != nil, "")
-		if err == nil && op != "" {
-			testReq.Request.Operation = admissionv1.Operation(op)
+	if testReq.Request != nil {
+		if err := inferOrValidateOperation(testReq); err != nil {
+			testReq.Error = err
 		}
 	}
 
 	return testReq
+}
+
+// inferOrValidateOperation infers the operation from object/oldObject presence,
+// or validates that an explicit operation matches what would be inferred.
+func inferOrValidateOperation(testReq *testRequest) error {
+	hasObject := testReq.Object != nil
+	hasOldObject := testReq.OldObject != nil
+
+	inferred, err := inferOperation(hasObject, hasOldObject, "")
+	if err != nil {
+		// Cannot infer (e.g., neither object nor oldObject present).
+		// Only an error if there's no explicit operation either.
+		if testReq.Request.Operation == "" {
+			return err
+		}
+
+		return nil
+	}
+
+	explicit := string(testReq.Request.Operation)
+	if explicit == "" {
+		testReq.Request.Operation = admissionv1.Operation(inferred)
+
+		return nil
+	}
+
+	if explicit != inferred {
+		return fmt.Errorf("%w: explicit %q, inferred %q from object/oldObject presence",
+			ErrOperationMismatch, explicit, inferred)
+	}
+
+	return nil
 }
 
 func matchPolicyName(baseName string, policyNames []string) string {

@@ -14,22 +14,22 @@ func TestValidateWithScheme(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		obj         map[string]interface{}
+		obj         map[string]any
 		field       string
 		expectedGVK *schema.GroupVersionKind
 		wantErr     bool
 	}{
 		{
 			name: "valid pod",
-			obj: map[string]interface{}{
+			obj: map[string]any{
 				"apiVersion": "v1",
 				"kind":       "Pod",
-				"metadata": map[string]interface{}{
+				"metadata": map[string]any{
 					"name": "test-pod",
 				},
-				"spec": map[string]interface{}{
-					"containers": []interface{}{
-						map[string]interface{}{
+				"spec": map[string]any{
+					"containers": []any{
+						map[string]any{
 							"name":  "nginx",
 							"image": "nginx",
 						},
@@ -42,15 +42,15 @@ func TestValidateWithScheme(t *testing.T) {
 		},
 		{
 			name: "invalid pod structure - typo in spec (strict)",
-			obj: map[string]interface{}{
+			obj: map[string]any{
 				"apiVersion": "v1",
 				"kind":       "Pod",
-				"metadata": map[string]interface{}{
+				"metadata": map[string]any{
 					"name": "test-pod",
 				},
-				"spec": map[string]interface{}{
-					"containerss": []interface{}{ // Typo 'containerss' instead of 'containers'
-						map[string]interface{}{
+				"spec": map[string]any{
+					"containerss": []any{ // Typo 'containerss' instead of 'containers'
+						map[string]any{
 							"name":  "nginx",
 							"image": "nginx",
 						},
@@ -62,13 +62,13 @@ func TestValidateWithScheme(t *testing.T) {
 		},
 		{
 			name: "invalid pod structure - wrong type for field",
-			obj: map[string]interface{}{
+			obj: map[string]any{
 				"apiVersion": "v1",
 				"kind":       "Pod",
-				"metadata": map[string]interface{}{
+				"metadata": map[string]any{
 					"name": "test-pod",
 				},
-				"spec": map[string]interface{}{
+				"spec": map[string]any{
 					"restartPolicy": 123, // Should be string
 				},
 			},
@@ -77,15 +77,15 @@ func TestValidateWithScheme(t *testing.T) {
 		},
 		{
 			name: "custom resource (unknown to scheme) - should pass leniently",
-			obj: map[string]interface{}{
+			obj: map[string]any{
 				"apiVersion": "cilium.io/v2",
 				"kind":       "CiliumNetworkPolicy",
-				"metadata": map[string]interface{}{
+				"metadata": map[string]any{
 					"name": "rule1",
 				},
-				"spec": map[string]interface{}{
-					"endpointSelector": map[string]interface{}{
-						"matchLabels": map[string]interface{}{
+				"spec": map[string]any{
+					"endpointSelector": map[string]any{
+						"matchLabels": map[string]any{
 							"role": "backend",
 						},
 					},
@@ -96,7 +96,7 @@ func TestValidateWithScheme(t *testing.T) {
 		},
 		{
 			name: "missing apiVersion",
-			obj: map[string]interface{}{
+			obj: map[string]any{
 				"kind": "Pod",
 			},
 			field:   "object",
@@ -104,7 +104,7 @@ func TestValidateWithScheme(t *testing.T) {
 		},
 		{
 			name: "missing kind",
-			obj: map[string]interface{}{
+			obj: map[string]any{
 				"apiVersion": "v1",
 			},
 			field:   "object",
@@ -112,10 +112,10 @@ func TestValidateWithScheme(t *testing.T) {
 		},
 		{
 			name: "wrong kind for namespaceObject",
-			obj: map[string]interface{}{
+			obj: map[string]any{
 				"apiVersion": "v1",
 				"kind":       "Pod", // Not Namespace
-				"metadata": map[string]interface{}{
+				"metadata": map[string]any{
 					"name": "foo",
 				},
 			},
@@ -129,10 +129,10 @@ func TestValidateWithScheme(t *testing.T) {
 		},
 		{
 			name: "correct kind for namespaceObject",
-			obj: map[string]interface{}{
+			obj: map[string]any{
 				"apiVersion": "v1",
 				"kind":       "Namespace",
-				"metadata": map[string]interface{}{
+				"metadata": map[string]any{
 					"name": "foo",
 				},
 			},
@@ -216,15 +216,15 @@ func TestInferOperation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := InferOperation(tt.hasObject, tt.hasOldObject, tt.requestOpStr)
+			got, err := inferOperation(tt.hasObject, tt.hasOldObject, tt.requestOpStr)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("InferOperation() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("inferOperation() error = %v, wantErr %v", err, tt.wantErr)
 
 				return
 			}
 
 			if got != tt.want {
-				t.Errorf("InferOperation() = %v, want %v", got, tt.want)
+				t.Errorf("inferOperation() = %v, want %v", got, tt.want)
 			}
 		})
 	}

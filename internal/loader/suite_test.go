@@ -143,13 +143,13 @@ func TestTestCase_Getters(t *testing.T) {
 	t.Parallel()
 
 	req := &admissionv1.AdmissionRequest{UID: "uid"}
-	obj := &unstructured.Unstructured{Object: map[string]interface{}{"kind": "Pod"}}
-	oldObj := &unstructured.Unstructured{Object: map[string]interface{}{"kind": "Pod"}}
-	params := &unstructured.Unstructured{Object: map[string]interface{}{"foo": "bar"}}
-	nsObj := &unstructured.Unstructured{Object: map[string]interface{}{"kind": "Namespace"}}
+	obj := &unstructured.Unstructured{Object: map[string]any{"kind": "Pod"}}
+	oldObj := &unstructured.Unstructured{Object: map[string]any{"kind": "Pod"}}
+	params := &unstructured.Unstructured{Object: map[string]any{"foo": "bar"}}
+	nsObj := &unstructured.Unstructured{Object: map[string]any{"kind": "Namespace"}}
 	userInfo := &user.DefaultInfo{Name: "user"}
 	auth := []evaluator.AuthorizationMockConfig{{Verb: "get"}}
-	expectedObj := &unstructured.Unstructured{Object: map[string]interface{}{"kind": "Mutation"}}
+	expectedObj := &unstructured.Unstructured{Object: map[string]any{"kind": "Mutation"}}
 	err := errTest
 
 	tc := &TestCase{
@@ -653,7 +653,7 @@ func TestMergeRequest_AllFields(t *testing.T) {
 func TestMergeTestRequests_Conflicts(t *testing.T) {
 	t.Parallel()
 
-	obj := &unstructured.Unstructured{Object: map[string]interface{}{"kind": "Pod"}}
+	obj := &unstructured.Unstructured{Object: map[string]any{"kind": "Pod"}}
 
 	tests := []struct {
 		name    string
@@ -684,6 +684,54 @@ func TestMergeTestRequests_Conflicts(t *testing.T) {
 				if !errors.Is(err, tt.wantErr) {
 					t.Errorf("mergeTestRequests() error = %v, want %v", err, tt.wantErr)
 				}
+			}
+		})
+	}
+}
+
+func TestInferOrValidateOperation(t *testing.T) {
+	t.Parallel()
+
+	obj := &unstructured.Unstructured{Object: map[string]any{"kind": "Pod"}}
+
+	ar := func(op string) *admissionv1.AdmissionRequest {
+		return &admissionv1.AdmissionRequest{Operation: admissionv1.Operation(op)}
+	}
+	tests := []struct {
+		name    string
+		req     testRequest
+		wantOp  string
+		wantErr error
+	}{
+		{"infer CREATE", testRequest{Object: obj, Request: ar("")}, "CREATE", nil},
+		{"infer DELETE", testRequest{OldObject: obj, Request: ar("")}, "DELETE", nil},
+		{"infer UPDATE", testRequest{Object: obj, OldObject: obj, Request: ar("")}, "UPDATE", nil},
+		{"explicit matches", testRequest{Object: obj, Request: ar("CREATE")}, "CREATE", nil},
+		{"explicit conflicts", testRequest{Object: obj, OldObject: obj, Request: ar("DELETE")}, "", ErrOperationMismatch},
+		{"CONNECT no objects", testRequest{Request: ar("CONNECT")}, "CONNECT", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := tt.req
+			err := inferOrValidateOperation(&req)
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("inferOrValidateOperation() error = %v, want %v", err, tt.wantErr)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("inferOrValidateOperation() unexpected error: %v", err)
+			}
+
+			if string(req.Request.Operation) != tt.wantOp {
+				t.Errorf("operation = %q, want %q", req.Request.Operation, tt.wantOp)
 			}
 		})
 	}

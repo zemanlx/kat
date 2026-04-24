@@ -18,4 +18,5 @@ var (
 	ErrConflictOldObject            = errors.New("conflict: oldObject defined in multiple files")
 	ErrConflictNamespaceObject      = errors.New("conflict: namespaceObject defined in multiple files")
 	ErrConflictParams               = errors.New("conflict: params defined in multiple files")
+	ErrOperationMismatch            = errors.New("explicit operation does not match inferred operation")
 )
