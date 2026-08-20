@@ -1,0 +1,11 @@
+# Rename to: <policy-name>.<test-name>.<expect>.params.yaml
+# Parameter resource for a policy that uses paramKind/paramRef (e.g. a ConfigMap).
+# In CEL the policy reads it as `params` (e.g. int(params.data.maxReplicas)).
+# Pair with a .object.yaml (same base name) holding the object under test.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: replica-limit-config
+  namespace: default
+data:
+  maxReplicas: "5"

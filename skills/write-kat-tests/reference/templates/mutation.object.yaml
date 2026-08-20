@@ -1,0 +1,21 @@
+# Rename to: <policy-name>.<test-name>.object.yaml   (no expect token needed)
+# Input object for a MutatingAdmissionPolicy. Pair with a .gold.yaml holding the
+# full expected object AFTER mutation. A mutating policy that changes the object
+# requires the .gold.yaml or the test fails.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+        - name: nginx
+          image: nginx

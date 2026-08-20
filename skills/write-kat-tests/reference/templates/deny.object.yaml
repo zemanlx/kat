@@ -1,0 +1,11 @@
+# Rename to: <policy-name>.<test-name>.deny.object.yaml
+# The object violates the policy, so admission is expected to be DENIED.
+# Pair with a matching .deny.message.txt to assert the exact denial message.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-pod
+spec:
+  containers:
+    - name: app
+      image: nginx

@@ -1,0 +1,13 @@
+# Rename to: <policy-name>.<test-name>.allow.object.yaml
+# The object satisfies the policy, so admission is expected to be ALLOWED.
+# Make apiVersion/kind/labels match your policy's matchConstraints + validation.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-pod
+  labels:
+    owner: platform-team
+spec:
+  containers:
+    - name: app
+      image: nginx

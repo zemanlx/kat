@@ -1,0 +1,25 @@
+# Rename to: <policy-name>.<test-name>.<expect>.request.yaml
+# UPDATE example: providing both object and oldObject infers operation = UPDATE.
+# (object only -> CREATE; oldObject only -> DELETE; set operation: CONNECT for CONNECT.)
+object:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: my-pod
+    labels:
+      owner: platform-team
+  spec:
+    containers:
+      - name: app
+        image: nginx:1.25
+oldObject:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: my-pod
+    labels:
+      owner: platform-team
+  spec:
+    containers:
+      - name: app
+        image: nginx:1.24

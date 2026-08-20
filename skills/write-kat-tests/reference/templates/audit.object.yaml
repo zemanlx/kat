@@ -1,0 +1,13 @@
+# Rename to: <policy-name>.<test-name>.audit.object.yaml
+# The object is ADMITTED but the policy records audit annotations.
+# Pair with a matching .audit.annotations.yaml listing the expected key(s)/value(s).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privileged-pod
+spec:
+  containers:
+    - name: app
+      image: nginx
+      securityContext:
+        privileged: true

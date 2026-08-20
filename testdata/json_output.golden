@@ -26,4 +26,3 @@
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"sidecar-injection","test":"sidecar-injection.skip-without-label.yaml"}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"sidecar-injection","test":"sidecar-injection.skip-without-label.yaml","elapsed":0}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"sidecar-injection","elapsed":0}
-{"time":"2000-01-01T00:00:00Z","action":"pass","elapsed":0}

@@ -1,0 +1,20 @@
+# Rename to: <policy-name>.<test-name>.warn.object.yaml
+# The object is ADMITTED but the policy emits a warning.
+# Pair with a matching .warn.warnings.txt listing the expected warning(s).
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: legacy-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: legacy
+  template:
+    metadata:
+      labels:
+        app: legacy
+    spec:
+      containers:
+        - name: app
+          image: nginx
