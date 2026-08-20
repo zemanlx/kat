@@ -25,6 +25,28 @@ my-policy/
     └── my-policy.bad-pod.deny.object.yaml
 ```
 
+The policy itself is a standard `ValidatingAdmissionPolicy`:
+
+```yaml
+# policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: my-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["pods"]
+  validations:
+  - expression: "has(object.metadata.labels) && 'owner' in object.metadata.labels"
+    message: "All workloads must have an 'owner' label"
+    reason: Invalid
+```
+
 The simplest test is just a Kubernetes object:
 
 ```yaml
@@ -52,7 +74,40 @@ Run it:
 kat .
 ```
 
-That's it. `kat` discovers the policy, finds the tests, and evaluates them. The filename tells `kat` everything: which policy to test (`my-policy`), what to expect (`allow` or `deny`), and what the file contains (`object`).
+```text
+ok  	my-policy	0.004s
+```
+
+That's it. `kat` discovers the policy, finds the tests, and evaluates them. The filename tells `kat` everything: which policy to test (`my-policy`), what to expect (`allow` or `deny`), and what the file contains (`object`). See [File Naming Convention](#file-naming-convention) for the full grammar.
+
+For deny tests you can also add a `.message.txt` file to assert the exact rejection message. It's optional, but recommended — it catches policies that fail for the wrong reason.
+
+The output and flags mirror `go test`, so `kat` drops straight into existing CI. Use `-v` to see each test case, and note that `kat` exits non-zero when any test fails:
+
+```text
+=== RUN   my-policy
+=== RUN   my-policy/my-policy.bad-pod.deny.yaml
+--- PASS: my-policy/my-policy.bad-pod.deny.yaml (0.00s)
+=== RUN   my-policy/my-policy.good-pod.allow.yaml
+--- PASS: my-policy/my-policy.good-pod.allow.yaml (0.00s)
+PASS
+```
+
+When a test fails, `kat` reports why — including a diff for mutating policies:
+
+```text
+--- FAIL: add-default-labels/add-default-labels.no-labels.yaml (0.00s)
+    mutated object does not match expected:
+    --- Expected
+    +++ Actual
+    @@ -2,7 +2,7 @@
+     metadata:
+         labels:
+    -        environment: dev
+    +        environment: development
+FAIL	add-default-labels	0.008s
+test summary: tests failed: 2
+```
 
 ## Installation
 
@@ -76,25 +131,33 @@ Run from the root of your repository — `kat` will automatically discover and e
 kat .
 ```
 
-Target specific directories or files:
+Target one or more directories (a policy directory, a `tests/` directory, or any parent):
 
 ```bash
 # Run tests for a specific policy
-kat ./policies/my-policy/tests
+kat ./policies/my-policy
 
-# Run a specific test case
-kat ./policies/my-policy/tests/my-policy.basic-test.object.yaml
+# Run several policies at once
+kat ./policies/my-policy ./policies/other-policy
+```
+
+To run a single test case, use `-run` to match it by name:
+
+```bash
+kat -run "my-policy.basic-test" ./policies/my-policy
 ```
 
 ### Flags
 
 - `-run <regex>`: Run only tests matching the regex pattern.
 - `-v`: Verbose output (shows detailed execution steps).
-- `-json`: Output results in JSON format.
+- `-json`: Emit newline-delimited JSON events, compatible with `go test -json` (works with tooling like `gotestsum`).
 
 ```bash
 kat -v -run "prod-.*-deny" .
 ```
+
+`kat` exits `0` when all tests pass and non-zero when any test fails, so it can be used directly as a CI gate.
 
 ## Project Structure & Discovery
 
@@ -279,6 +342,64 @@ Any check not explicitly mocked returns "NoOpinion".
 - **CONNECT**: Set `operation: CONNECT` in `.request.yaml`.
 
 Operation inference works the same way whether fields are in separate files or consolidated in `.request.yaml`. If you set `operation:` explicitly and it conflicts with what would be inferred from the fields present, `kat` reports an error.
+
+### Write, Run, Validate
+
+Authoring a test is a short loop:
+
+1. **Write** — copy an object that matches the policy's `matchConstraints`, name the
+   file `<policy-name>.<test-name>.<expect>.<type>.yaml`, and add any companion file
+   (`.message.txt`, `.warnings.txt`, `.annotations.yaml`, `.gold.yaml`).
+2. **Run** — `kat -v <policy-dir>` (or `kat -run "<test-name>" <policy-dir>` for one case).
+3. **Validate** — confirm the run exits `0`. A failure prints a diff showing exactly
+   what to fix.
+
+### Gotchas & Constraints
+
+- `kat` takes **directories**, not single files — use `-run` to target one case.
+- Only the `deny` token flips the expectation; `warn`/`audit` still expect the request
+  to be **allowed** and rely on their companion file for the real assertion.
+- Make sure the object actually matches the policy's `matchConstraints`
+  (apiGroup/version/resource/operation) — otherwise the policy never fires.
+- A mutating policy that mutates the object **requires** a `.gold.yaml`.
+- Defining the same field in both `.request.yaml` and a split file is an error.
+- Assertions are exact: deny message equals `.message.txt` (trimmed), warnings match
+  by line/index, audit annotations match the listed keys exactly.
+- Only `admissionregistration.k8s.io/v1` is supported; `v1beta1` is a hard error.
+
+## For AI agents
+
+This repo ships machine-readable guidance so coding agents can author tests reliably.
+The links below are absolute so an agent can fetch them directly, even from another repo:
+
+- [`AGENTS.md`](https://github.com/zemanlx/kat/blob/main/AGENTS.md) — repo orientation
+  (build/test/lint commands, discovery, conventions).
+  Raw: `https://raw.githubusercontent.com/zemanlx/kat/main/AGENTS.md`
+- [`skills/write-kat-tests/SKILL.md`](https://github.com/zemanlx/kat/blob/main/skills/write-kat-tests/SKILL.md)
+  — a portable skill with the authoritative filename grammar and copy-ready templates
+  for every test archetype.
+  Raw: `https://raw.githubusercontent.com/zemanlx/kat/main/skills/write-kat-tests/SKILL.md`
+
+### Using kat's skill in your own repo
+
+If your repository uses `kat` to test admission policies, point your own coding agent
+at this skill so it writes correct tests without you cloning anything. Add a short note
+to your repo's `AGENTS.md` (or the equivalent agent instructions file):
+
+```markdown
+## Testing admission policies
+
+This repo uses [kat](https://github.com/zemanlx/kat) to test Kubernetes admission
+policies. When creating or editing `kat` test cases, follow the authoritative skill:
+https://raw.githubusercontent.com/zemanlx/kat/main/skills/write-kat-tests/SKILL.md
+(filename grammar and templates under
+https://github.com/zemanlx/kat/tree/main/skills/write-kat-tests/reference).
+Always finish by running `kat <dir>` and confirming exit code 0.
+```
+
+Agents that support project skills can instead vendor the skill locally by copying
+`skills/write-kat-tests/` into their skills directory
+(e.g. `.claude/skills/`, `.github/skills/`, or `.agents/skills/`).
 
 ## Features
 

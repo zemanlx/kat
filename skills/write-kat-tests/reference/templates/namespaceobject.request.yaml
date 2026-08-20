@@ -1,0 +1,31 @@
+# Rename to: <policy-name>.<test-name>.<expect>.request.yaml
+# Provides the request namespace object for policies that read `namespaceObject`
+# in CEL (e.g. namespace-label-based rules). Combine it with an object in the same
+# file; the operation is inferred from the object.
+namespace: production
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: production
+    labels:
+      environment: prod
+object:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: prod-deployment
+    namespace: production
+  spec:
+    replicas: 3
+    selector:
+      matchLabels:
+        app: test
+    template:
+      metadata:
+        labels:
+          app: test
+      spec:
+        containers:
+          - name: nginx
+            image: nginx

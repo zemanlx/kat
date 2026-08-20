@@ -1,0 +1,10 @@
+# Rename to: <policy-name>.<test-name>.<expect>.authorizer.yaml
+# Mocks Kubernetes Authorizer (SubjectAccessReview) responses for policies that use
+# `authorizer` in CEL. Any check not listed here returns "NoOpinion".
+# Pair with a .request.yaml/.object.yaml (same base name) for the object + userInfo.
+- group: ""
+  resource: "pods"
+  subresource: ""
+  namespace: "default"
+  verb: "create"
+  decision: "allow"

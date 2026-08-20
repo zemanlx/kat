@@ -34,8 +34,6 @@ type Reporter struct {
 	totalTests  int
 	passedTests int
 	failedTests int
-
-	startTime time.Time
 }
 
 var errTestsFailed = errors.New("tests failed")
@@ -43,9 +41,8 @@ var errTestsFailed = errors.New("tests failed")
 // New creates a new Reporter that writes to the given output.
 func New(out io.Writer) *Reporter {
 	return &Reporter{
-		out:       out,
-		format:    FormatDefault,
-		startTime: time.Now(),
+		out:    out,
+		format: FormatDefault,
 	}
 }
 
@@ -251,22 +248,12 @@ func (s *SuiteReporter) End() {
 
 // Summary prints the final test summary and returns an error if tests failed.
 func (r *Reporter) Summary() error {
-	elapsed := time.Since(r.startTime).Seconds()
-
 	switch r.format {
 	case FormatJSON:
-		// Overall result
-		if r.failedTests > 0 {
-			r.emitJSON(TestEvent{
-				Action:  "fail",
-				Elapsed: elapsed,
-			})
-		} else {
-			r.emitJSON(TestEvent{
-				Action:  "pass",
-				Elapsed: elapsed,
-			})
-		}
+		// go test -json emits no overall summary event; per-package results
+		// are emitted by SuiteReporter.End. Emitting a package-less event here
+		// would create a phantom empty package in consumers like gotestsum.
+		break
 	case FormatVerbose:
 		// Summary only in default and verbose modes
 		if r.failedTests > 0 {

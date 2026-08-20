@@ -1,0 +1,10 @@
+# Rename to: <policy-name>.<test-name>.<expect>.oldObject.yaml
+# A DELETE test: providing only oldObject (and no object) makes kat infer
+# operation DELETE. The policy sees the resource being deleted as `oldObject`.
+# For deny cases, pair with a matching .message.txt in the same base name.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: development
+  labels:
+    environment: dev

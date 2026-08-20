@@ -1,0 +1,21 @@
+# Rename to: <policy-name>.<test-name>.<expect>.request.yaml
+# Provides the requesting user for policies that read `request.userInfo` in CEL.
+# Combine userInfo with an object in the same file (operation is inferred from it).
+operation: CREATE
+userInfo:
+  username: system:serviceaccount:team-core-infra-ci:deployer
+  groups:
+    - system:serviceaccounts
+    - system:serviceaccounts:team-core-infra-ci
+    - system:authenticated
+object:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: my-pod
+    labels:
+      owner: platform-team
+  spec:
+    containers:
+      - name: app
+        image: nginx

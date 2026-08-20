@@ -542,8 +542,8 @@ kat ./policies/sidecar-injection
 # Run tests in current directory only
 kat .
 
-# Run specific test file
-kat ./policies/sidecar-injection/tests/sidecar-injection.adding-istio-sidecar.object.yaml
+# Run a specific test case (paths must be directories; select the case with -run)
+kat -run "sidecar-injection.adding-istio-sidecar" ./policies/sidecar-injection
 ```
 
 ### Flags

@@ -1,0 +1,4 @@
+# Rename to: <policy-name>.<test-name>.audit.annotations.yaml
+# Expected audit annotations (key -> value). Only the keys listed here are checked;
+# extra annotations produced by the policy are ignored.
+privileged-container: "true"
