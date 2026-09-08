@@ -60,7 +60,9 @@ Pattern: `<policy-name>.<test-name>.<expect>.<type>.yaml`
 - `<policy-name>` must prefix a policy's `metadata.name`. With a single policy in
   the directory the prefix is optional (auto-associated).
 - `<expect>`: `allow` | `deny` | `warn` | `audit`. Parsed by substring:
-  `.deny.`/`.deny` ⇒ expect denied; everything else ⇒ expect allowed.
+  `.deny.`/`.deny` ⇒ expect denied; everything else ⇒ expect allowed. This token
+  is a **validating** concept: mutating policies always allow, so omit it and name
+  the case after what it mutates (assert the result via `.gold.yaml`).
 - `<type>` (input suffixes): `.request.yaml`, `.object.yaml`, `.oldObject.yaml`,
   `.namespaceObject.yaml`, `.params.yaml`, `.annotations.yaml`, `.warnings.txt`,
   `.authorizer.yaml`. Files sharing a base name are merged into one case.

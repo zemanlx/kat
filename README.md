@@ -200,7 +200,7 @@ The `<policy-name>` prefix must match the `metadata.name` of the policy being te
 
 | Part | Values | Description |
 |------|--------|-------------|
-| **expect** | `allow`, `deny`, `warn`, `audit` | Expected admission outcome |
+| **expect** | `allow`, `deny`, `warn`, `audit` | Expected admission outcome (validating policies; omit for mutating — see [Mutating Policies](#mutating-policies)) |
 | **type** | `object`, `oldObject`, `request`, `params`, `namespaceObject`, `authorizer`, `annotations`, `warnings` | What the file contains |
 
 Multiple files with the same `<policy-name>.<test-name>.<expect>` prefix are merged into a single test case.
@@ -316,6 +316,8 @@ For mutating policies, provide a **golden file** (`.gold.yaml`) with the expecte
 my-policy.add-labels.object.yaml    # Input object
 my-policy.add-labels.gold.yaml      # Expected object after mutation
 ```
+
+Mutating policies always admit the request (they mutate, never deny), so **omit the `<expect>` token** — name the case after what it mutates (here, `add-labels`) rather than `allow`/`deny`. The assertion is the `.gold.yaml` diff, not the admission outcome.
 
 If the actual mutation result differs from the golden file, the test fails with a diff. This also works with all-in-one `.request.yaml` files — just place a `.gold.yaml` alongside it.
 
