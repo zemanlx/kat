@@ -50,7 +50,10 @@ Always follow this loop. Do not consider a test done until `kat` passes it.
   policies it is required.
 - **`<test-name>`** — a descriptive slug (may contain dots).
 - **`<expect>`** — `allow` | `deny` | `warn` | `audit`. Only `.deny.`/`.deny`
-  means "expect denied"; everything else expects the request allowed.
+  means "expect denied"; everything else expects the request allowed. This applies
+  to **validating** policies only. Mutating policies always allow, so **omit the
+  expect token** for them — name the case after what it mutates (e.g.
+  `<policy>.<what-it-mutates>.object.yaml`) and assert the result with `.gold.yaml`.
 - **`<type>`** — the input file kind (see table). Files that share the base name
   `<policy-name>.<test-name>.<expect>` are merged into one test case.
 
@@ -114,14 +117,18 @@ Advanced inputs (combine with an object, in the same base name):
 - `exec.request.yaml` — CONNECT subresource (e.g. `kubectl exec`) with `subResource`/`options`
 - `authorizer.authorizer.yaml` — mocks Authorizer (SubjectAccessReview) checks
 
-Rename each to `<policy-name>.<test-name>.<expect>.<type>.yaml` before use.
+Rename each to `<policy-name>.<test-name>.<expect>.<type>.yaml` before use. The
+`mutation` set is the exception: mutating policies always allow, so drop the
+`<expect>` token and name it `<policy-name>.<test-name>.<type>.yaml` (e.g.
+`add-default-labels.no-labels.object.yaml` + `.gold.yaml`).
 
 ## Common mistakes
 
 - Pointing `kat` at a file — it takes **directories only**. Use `-run` for one case.
 - Object doesn't match `matchConstraints`, so the policy never fires and a "deny"
   test wrongly passes as allow. Verify apiGroup/version/resource/operation.
-- Wrong `<expect>` token (only `deny` flips the expectation).
+- Wrong `<expect>` token (only `deny` flips the expectation). Do not add an
+  `<expect>` token to mutating-policy tests — they always allow; assert via `.gold.yaml`.
 - Mutating policy without a `.gold.yaml`.
 - Same field defined in both `.request.yaml` and a split file → conflict error.
 - Using `v1beta1` policies — only `admissionregistration.k8s.io/v1` is supported.

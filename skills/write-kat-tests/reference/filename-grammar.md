@@ -98,6 +98,11 @@ optional; with multiple policies it is required and must match a policy's
 Only the `deny` token flips the allow/deny expectation. `warn`/`audit` are
 allow-with-assertions and rely on their companion files for the real check.
 
+The expect token is a **validating**-policy concept. A `MutatingAdmissionPolicy`
+always returns `Allowed == true` (it mutates, never denies), so the token has no
+effect for mutating tests. Omit it: name the case `<policy-name>.<test-name>`
+(no `<expect>`) and assert the outcome with a `.gold.yaml` companion file.
+
 ## Operation inference
 
 | object | oldObject | explicit `operation:` | result |
