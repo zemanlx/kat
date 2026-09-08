@@ -28,7 +28,6 @@ import (
 	"k8s.io/apiserver/pkg/cel/library"
 	"k8s.io/apiserver/pkg/cel/mutation"
 	"k8s.io/apiserver/pkg/cel/mutation/dynamic"
-	"k8s.io/utils/ptr"
 )
 
 var (
@@ -1116,7 +1115,7 @@ func buildJSONPatchOperation(value ref.Val) (jsonpatch.Operation, error) {
 			return nil, fmt.Errorf("marshal patch value: %w", err)
 		}
 
-		resultOp["value"] = ptr.To[json.RawMessage](b)
+		resultOp["value"] = new(json.RawMessage(b))
 	}
 
 	return resultOp, nil

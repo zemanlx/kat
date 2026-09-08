@@ -48,7 +48,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "add label when match conditions satisfied",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					MatchConditions: []admissionregv1.MatchCondition{
 						{
@@ -93,7 +93,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "no mutation when match conditions not satisfied",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					MatchConditions: []admissionregv1.MatchCondition{
 						{
@@ -126,7 +126,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "add multiple labels",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -166,7 +166,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "add audit label when replica count increased",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					MatchConditions: []admissionregv1.MatchCondition{
 						{
@@ -228,7 +228,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "apply configuration - merge spec fields",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -279,7 +279,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "mixed patch types - preserve spec order",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -328,7 +328,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "apply configuration - add nested labels",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -371,7 +371,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "json patch - complex nested object value",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -419,7 +419,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "json patch - array with complex objects",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -475,7 +475,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "json patch - nested map value",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -514,7 +514,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "apply configuration - deeply nested structure",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -557,7 +557,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "apply configuration - merge arrays and objects",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -623,7 +623,7 @@ func TestEvaluateMutating(t *testing.T) {
 		{
 			name: "json patch - multiple patches with complex values",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -753,7 +753,7 @@ func TestEvaluateValidating(t *testing.T) {
 		{
 			name: "allow when validation passes",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -777,7 +777,7 @@ func TestEvaluateValidating(t *testing.T) {
 		{
 			name: "deny when validation fails",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -802,7 +802,7 @@ func TestEvaluateValidating(t *testing.T) {
 		{
 			name: "allow when match conditions fail - policy not evaluated",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					MatchConditions: []admissionregv1.MatchCondition{
 						{
@@ -833,7 +833,7 @@ func TestEvaluateValidating(t *testing.T) {
 		{
 			name: "deny when owner label is changed",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "prevent-owner-change"},
+				Name: "prevent-owner-change",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -873,7 +873,7 @@ func TestEvaluateValidating(t *testing.T) {
 		{
 			name: "allow when owner label unchanged",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "prevent-owner-change"},
+				Name: "prevent-owner-change",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -966,9 +966,7 @@ func TestEvaluateValidating_MultipleValidations(t *testing.T) {
 	}
 
 	policy := &admissionregv1.ValidatingAdmissionPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-policy",
-		},
+		Name: "test-policy",
 		Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 			Validations: []admissionregv1.Validation{
 				{
@@ -1319,9 +1317,7 @@ func TestRealPolicy_RequireOwnerLabel(t *testing.T) {
 	}
 
 	policy := &admissionregv1.ValidatingAdmissionPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "require-owner-label",
-		},
+		Name: "require-owner-label",
 		Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 			Validations: []admissionregv1.Validation{
 				{
@@ -1453,9 +1449,7 @@ func TestRealPolicy_BlockPrivilegedContainers(t *testing.T) {
 	}
 
 	policy := &admissionregv1.ValidatingAdmissionPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "block-privileged-containers",
-		},
+		Name: "block-privileged-containers",
 		Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 			Validations: []admissionregv1.Validation{
 				{

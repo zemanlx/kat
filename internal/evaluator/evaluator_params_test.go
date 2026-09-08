@@ -6,7 +6,6 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -28,7 +27,7 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		{
 			name: "add label from params",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -70,7 +69,7 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		{
 			name: "conditional mutation based on params",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					MatchConditions: []admissionregv1.MatchCondition{
 						{
@@ -118,7 +117,7 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		{
 			name: "no mutation when params condition not met",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					MatchConditions: []admissionregv1.MatchCondition{
 						{
@@ -155,7 +154,7 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		{
 			name: "add multiple labels from params object",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -208,7 +207,7 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		{
 			name: "set replica count from params",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					MatchConditions: []admissionregv1.MatchCondition{
 						{
@@ -266,7 +265,7 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 		{
 			name: "add annotation with value from nested params",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					Mutations: []admissionregv1.Mutation{
 						{
@@ -388,7 +387,7 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		{
 			name: "allow when label matches params requirement",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -420,7 +419,7 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		{
 			name: "deny when label not in params allowed list",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -453,7 +452,7 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		{
 			name: "enforce replica limit from params",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -485,7 +484,7 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		{
 			name: "deny when replica limit exceeded",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -518,7 +517,7 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		{
 			name: "validate required labels from params",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -552,7 +551,7 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		{
 			name: "deny when required labels missing",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{
@@ -585,7 +584,7 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		{
 			name: "match condition using params - policy not evaluated",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					MatchConditions: []admissionregv1.MatchCondition{
 						{
@@ -620,7 +619,7 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		{
 			name: "complex nested params validation",
 			policy: &admissionregv1.ValidatingAdmissionPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Name: "test-policy",
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{

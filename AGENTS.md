@@ -5,7 +5,7 @@ Admission Policies (`ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy`).
 
 ## Project overview
 
-- Language: Go (module `github.com/zemanlx/kat`, `go 1.26.0`).
+- Language: Go (module `github.com/zemanlx/kat`, `go 1.27.1`).
 - Entry point: `main.go`. Core logic under `internal/`:
   - `internal/loader` — discovers suites, parses policies/bindings and test files.
   - `internal/evaluator` — runs CEL evaluation and checks expected outcomes.
