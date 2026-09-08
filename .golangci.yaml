@@ -1,25 +1,56 @@
-# GolangCI-Lint configuration (v2 style)
+# GolangCI-Lint configuration (v2)
 # Docs: https://golangci-lint.run/usage/configuration/
-
+version: "2"
 run:
   tests: true
-  timeout: 5m
-
 linters:
-  enable-all: true
+  default: all
   disable:
-    - varnamelen
-    - testpackage
-    - lll
     - depguard
-    - tenv
-    - nonamedreturns
     - exhaustruct
+    - exhaustruct_v5
+    - funcorder
+    - godoclint
+    - gomodguard # deprecated; superseded by gomodguard_v2 (kept via default: all)
     - ireturn
-
-linters-settings:
-  gci:
-    sections:
-      - standard
-      - default
-      - prefix(github.com/zemanlx)
+    - lll
+    - noinlineerr
+    - nonamedreturns
+    - testpackage
+    - varnamelen
+    - wsl # deprecated; superseded by wsl_v5 (kept via default: all)
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # goconst on test fixtures (repeated literals like "apiVersion", "Pod")
+      # hurts readability more than it helps; keep it for production code only.
+      - linters:
+          - goconst
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/zemanlx)
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
