@@ -6,7 +6,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -129,7 +128,7 @@ func runMutatingTest(t *testing.T, policy *admissionregv1.MutatingAdmissionPolic
 
 func makeMutatingPolicy(expression string) *admissionregv1.MutatingAdmissionPolicy {
 	return &admissionregv1.MutatingAdmissionPolicy{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+		Name: "test-policy",
 		Spec: admissionregv1.MutatingAdmissionPolicySpec{
 			Mutations: []admissionregv1.Mutation{
 				{
@@ -397,8 +396,8 @@ func makeValidatingPolicy(matchExpression, validateExpression, message string) *
 	}
 
 	return &admissionregv1.ValidatingAdmissionPolicy{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
-		Spec:       spec,
+		Name: "test-policy",
+		Spec: spec,
 	}
 }
 

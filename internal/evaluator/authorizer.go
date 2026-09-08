@@ -88,6 +88,18 @@ func (m *MockAuthorizer) Authorize(_ context.Context, attrs authorizer.Attribute
 	return authorizer.DecisionNoOpinion, "no opinion", nil
 }
 
+// ConditionsAwareAuthorize implements the authorizer.Authorizer interface for a
+// non-conditions-aware authorizer.
+func (m *MockAuthorizer) ConditionsAwareAuthorize(ctx context.Context, attrs authorizer.Attributes) authorizer.ConditionsAwareDecision {
+	return authorizer.ConditionsAwareDecisionFromParts(m.Authorize(ctx, attrs))
+}
+
+// EvaluateConditions implements the authorizer.Authorizer interface. The mock
+// does not support conditions, so it fails closed.
+func (m *MockAuthorizer) EvaluateConditions(_ context.Context, _ authorizer.ConditionsAwareDecision, _ authorizer.ConditionsData) (authorizer.Decision, string, error) {
+	return authorizer.DecisionDeny, "", authorizer.ErrorConditionEvaluationNotSupported
+}
+
 // MockUserInfo creates a simple user.Info for testing.
 func MockUserInfo(username string, groups []string) user.Info {
 	return &user.DefaultInfo{

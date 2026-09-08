@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,15 +40,22 @@ type PolicySet struct {
 func LoadPolicySet(dir string) (*PolicySet, error) {
 	ps := &PolicySet{Dir: dir}
 
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	// Confine reads to dir via os.Root so a swapped symlink cannot escape it.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("open policy dir %s: %w", dir, err)
+	}
+	defer root.Close()
+
+	err = fs.WalkDir(root.FS(), ".", func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return fmt.Errorf("walk %s: %w", path, err)
+			return fmt.Errorf("walk %s: %w", filepath.Join(dir, path), err)
 		}
 
-		// Skip special directories
+		// Skip special directories (but never the root itself, whose name is ".")
 		if d.IsDir() {
 			name := d.Name()
-			if name == "tests" || name == "testdata" || strings.HasPrefix(name, ".") {
+			if path != "." && (name == "tests" || name == "testdata" || strings.HasPrefix(name, ".")) {
 				return filepath.SkipDir
 			}
 
@@ -60,15 +68,18 @@ func LoadPolicySet(dir string) (*PolicySet, error) {
 			return nil
 		}
 
-		// Read and load the file
-		fileBytes, err := os.ReadFile(path)
+		// Read via the root so the path cannot escape dir; keep the full
+		// path for messages and document loading.
+		displayPath := filepath.Join(dir, path)
+
+		fileBytes, err := root.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", path, err)
+			return fmt.Errorf("read %s: %w", displayPath, err)
 		}
 
 		// Process all documents in the YAML file
-		if err := ps.loadDocuments(fileBytes, path); err != nil {
-			return fmt.Errorf("load documents from %s: %w", path, err)
+		if err := ps.loadDocuments(fileBytes, displayPath); err != nil {
+			return fmt.Errorf("load documents from %s: %w", displayPath, err)
 		}
 
 		return nil

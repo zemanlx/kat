@@ -5,7 +5,7 @@ Admission Policies (`ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy`).
 
 ## Project overview
 
-- Language: Go (module `github.com/zemanlx/kat`, `go 1.26.0`).
+- Language: Go (module `github.com/zemanlx/kat`, `go 1.27.1`).
 - Entry point: `main.go`. Core logic under `internal/`:
   - `internal/loader` — discovers suites, parses policies/bindings and test files.
   - `internal/evaluator` — runs CEL evaluation and checks expected outcomes.
@@ -20,10 +20,10 @@ go build ./...            # build everything
 go test ./...             # run all Go tests
 go test -v ./...          # exactly what CI runs (.github/workflows/ci.yml)
 go test -update ./...     # regenerate golden files (testdata/*.golden)
-golangci-lint run --timeout=5m   # lint (config: .golangci.yaml, enable-all + disables)
+golangci-lint run         # lint (golangci-lint v2; config: .golangci.yaml)
 ```
 
-- CI (`.github/workflows/ci.yml`) runs `go test -v ./...` and `golangci-lint-action@v6`.
+- CI (`.github/workflows/ci.yml`) runs `go test -v ./...` and `golangci-lint-action@v7`.
 - Go golden files (e.g. `testdata/json_output.golden`) are written by the custom
   `-update` flag in `main_test.go`. After changing reporter output, run
   `go test -update ./...`, then review the diff before committing.
