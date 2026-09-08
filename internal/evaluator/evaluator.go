@@ -15,7 +15,6 @@ import (
 	"github.com/google/cel-go/common/types/traits"
 	"github.com/google/cel-go/ext"
 	"github.com/pmezard/go-difflib/difflib"
-	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
@@ -1108,10 +1107,9 @@ func buildJSONPatchOperation(value ref.Val) (jsonpatch.Operation, error) {
 	}
 
 	if op.Val != nil {
-		converted, err := op.Val.ConvertToNative(reflect.TypeFor[*structpb.Value]())
-		if err != nil {
-			return nil, fmt.Errorf("convert patch value: %w", err)
-		}
+		// Convert to native Go directly; cel-go's structpb.Value conversion
+		// panics when the value is a list of objects.
+		converted := convertCELValue(op.Val)
 
 		b, err := json.Marshal(converted)
 		if err != nil {

@@ -1841,3 +1841,59 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 		})
 	}
 }
+
+// TestEvaluateMutating_JSONPatchListOfObjects reproduces a panic where a
+// JSONPatch value that is a list of objects (e.g. topologySpreadConstraints)
+// fails to convert to *structpb.Value inside cel-go.
+func TestEvaluateMutating_JSONPatchListOfObjects(t *testing.T) {
+	t.Parallel()
+
+	evaluator, err := New()
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	policy := makeMutatingPolicy(`[
+		JSONPatch{
+			op: "add",
+			path: "/spec/topologySpreadConstraints",
+			value: [
+				Object.spec.topologySpreadConstraints{
+					maxSkew: 1,
+					topologyKey: "topology.kubernetes.io/zone",
+					whenUnsatisfiable: "ScheduleAnyway",
+				},
+			],
+		},
+	]`)
+
+	object := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata":   map[string]any{"name": "web", "namespace": "default"},
+			"spec":       map[string]any{},
+		},
+	}
+
+	request := &admissionv1.AdmissionRequest{
+		UID:       types.UID("test-uid"),
+		Name:      "web",
+		Namespace: "default",
+		Operation: admissionv1.Create,
+	}
+
+	result, err := evaluator.EvaluateMutating(policy, nil, request, object, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("EvaluateMutating() error = %v", err)
+	}
+
+	constraints, found, err := unstructured.NestedSlice(result.PatchedObject.Object, "spec", "topologySpreadConstraints")
+	if err != nil || !found {
+		t.Fatalf("expected topologySpreadConstraints to be added, found=%v err=%v", found, err)
+	}
+
+	if len(constraints) != 1 {
+		t.Fatalf("expected 1 constraint, got %d", len(constraints))
+	}
+}
