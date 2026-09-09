@@ -4,6 +4,10 @@
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"add-default-labels","test":"add-default-labels.no-labels.yaml"}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"add-default-labels","test":"add-default-labels.no-labels.yaml","elapsed":0}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"add-default-labels","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"image-mapper"}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"image-mapper","test":"image-mapper.multi-container.yaml"}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"image-mapper","test":"image-mapper.multi-container.yaml","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"image-mapper","elapsed":0}
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"mutating-with-binding"}
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"mutating-with-binding","test":"add-label.all-in-one.allowed.yaml"}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"mutating-with-binding","test":"add-label.all-in-one.allowed.yaml","elapsed":0}
