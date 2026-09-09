@@ -1,0 +1,28 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: image-mapper
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE"]
+      resources: ["pods"]
+  mutations:
+  # Pin known container images and inject a sidecar via ApplyConfiguration.
+  # The expression returns only name+image (plus one injected env) for the "app"
+  # container and a brand new "istio-proxy" container. Structured merge must:
+  #   - update "app" in place, preserving its ports and existing env,
+  #   - merge the container's env list by name (append INJECTED, keep FOO),
+  #   - retain the unlisted "cache" container untouched,
+  #   - append the new "istio-proxy" container.
+  - patchType: ApplyConfiguration
+    applyConfiguration:
+      expression: >-
+        Object{spec: Object.spec{containers: [
+          {"name": "app", "image": "registry.example/app",
+           "env": [{"name": "INJECTED", "value": "true"}]},
+          {"name": "istio-proxy", "image": "registry.example/istio-proxy"}
+        ]}}

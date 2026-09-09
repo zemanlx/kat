@@ -1,4 +1,5 @@
 ok  	add-default-labels	0.000s
+ok  	image-mapper	0.000s
 ok  	mutating-with-binding	0.000s
 ok  	namespace-selector-binding-mutating	0.000s
 ok  	sidecar-injection	0.000s

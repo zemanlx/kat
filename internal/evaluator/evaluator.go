@@ -28,6 +28,8 @@ import (
 	"k8s.io/apiserver/pkg/cel/library"
 	"k8s.io/apiserver/pkg/cel/mutation"
 	"k8s.io/apiserver/pkg/cel/mutation/dynamic"
+
+	"github.com/zemanlx/kat/internal/ssa"
 )
 
 var (
@@ -684,36 +686,49 @@ func (e *Evaluator) applyMutations(
 	patchedObject := object.DeepCopy()
 
 	for _, mutation := range mutations {
-		switch mutation.PatchType {
-		case admissionregv1.PatchTypeJSONPatch:
-			patch, err := e.evaluateJSONPatchMutation(mutation, vars)
-			if err != nil {
-				return nil, err
-			}
+		var err error
 
-			if patch != nil {
-				var err error
-
-				patchedObject, err = e.applyJSONPatches([]any{patch}, patchedObject)
-				if err != nil {
-					return nil, err
-				}
-			}
-		case admissionregv1.PatchTypeApplyConfiguration:
-			config, err := e.evaluateApplyConfigurationMutation(mutation, vars)
-			if err != nil {
-				return nil, err
-			}
-
-			if config != nil {
-				patchedObject = e.applyApplyConfigurations([]*unstructured.Unstructured{config}, patchedObject)
-			}
-		default:
-			return nil, fmt.Errorf("%w: %s", errUnsupportedPatchType, mutation.PatchType)
+		patchedObject, err = e.applyMutation(mutation, patchedObject, vars)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	return patchedObject, nil
+}
+
+// applyMutation applies a single mutation to object and returns the result.
+func (e *Evaluator) applyMutation(
+	mutation admissionregv1.Mutation,
+	object *unstructured.Unstructured,
+	vars map[string]any,
+) (*unstructured.Unstructured, error) {
+	switch mutation.PatchType {
+	case admissionregv1.PatchTypeJSONPatch:
+		patch, err := e.evaluateJSONPatchMutation(mutation, vars)
+		if err != nil {
+			return nil, err
+		}
+
+		if patch == nil {
+			return object, nil
+		}
+
+		return e.applyJSONPatches([]any{patch}, object)
+	case admissionregv1.PatchTypeApplyConfiguration:
+		config, err := e.evaluateApplyConfigurationMutation(mutation, vars)
+		if err != nil {
+			return nil, err
+		}
+
+		if config == nil {
+			return object, nil
+		}
+
+		return e.applyApplyConfigurations([]*unstructured.Unstructured{config}, object)
+	default:
+		return nil, fmt.Errorf("%w: %s", errUnsupportedPatchType, mutation.PatchType)
+	}
 }
 
 // EvaluateValidating evaluates a ValidatingAdmissionPolicy against an admission request.
@@ -1187,45 +1202,25 @@ func applyPatchOperations(result jsonpatch.Patch, object *unstructured.Unstructu
 	return patchedObject, nil
 }
 
-// applyApplyConfigurations applies a collection of ApplyConfiguration configs to an object using strategic merge.
+// applyApplyConfigurations applies ApplyConfiguration configs to an object using
+// Kubernetes server-side-apply semantics (see the ssa package): lists declared
+// as listType=map in the schema are merged by their keys rather than replaced.
 func (e *Evaluator) applyApplyConfigurations(
 	configs []*unstructured.Unstructured,
 	object *unstructured.Unstructured,
-) *unstructured.Unstructured {
-	if len(configs) == 0 {
-		return object
-	}
+) (*unstructured.Unstructured, error) {
+	result := object
 
-	// Start with a copy of the object
-	result := object.DeepCopy()
-
-	// Apply each configuration using strategic merge
 	for _, config := range configs {
-		// This is a simplified version - real implementation would use structured-merge-diff
-		mergeObjects(result.Object, config.Object)
-	}
-
-	return result
-}
-
-// mergeObjects performs a strategic merge of src into dst.
-// This is a simplified merge that recursively merges nested maps,
-// replaces slices, and overwrites primitive values.
-func mergeObjects(dst, src map[string]any) {
-	for key, srcVal := range src {
-		if dstVal, exists := dst[key]; exists {
-			// If both are maps, merge recursively
-			if dstMap, dstOk := dstVal.(map[string]any); dstOk {
-				if srcMap, srcOk := srcVal.(map[string]any); srcOk {
-					mergeObjects(dstMap, srcMap)
-
-					continue
-				}
-			}
+		merged, err := ssa.Merge(result, config)
+		if err != nil {
+			return nil, fmt.Errorf("apply configuration: %w", err)
 		}
-		// For everything else (slices, primitives, or type mismatches), overwrite
-		dst[key] = srcVal
+
+		result = merged
 	}
+
+	return result, nil
 }
 
 // convertCELValue recursively converts CEL ref.Val to native Go values.
