@@ -92,3 +92,7 @@ FAIL	prevent-owner-change	0.000s
     -high-privilege-pod: 'Pod privileged-pod has privileged container: api'
     +high-privilege-pod: 'Pod privileged-pod has privileged container: app'
 FAIL	track-privileged-audit	0.000s
+
+--- FAIL: variables-forward-reference/variables-forward-reference.forward.allow.yaml (0.00s)
+    evaluation error: evaluate variable "first": evaluate: no such key: second
+FAIL	variables-forward-reference	0.000s

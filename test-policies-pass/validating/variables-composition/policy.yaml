@@ -1,0 +1,29 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: variables-composition
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["pods"]
+  variables:
+  - name: containerCount
+    expression: "has(object.spec.containers) ? object.spec.containers.size() : 0"
+  - name: isMultiContainer
+    expression: "variables.containerCount > 1"
+  matchConditions:
+  - name: only-pods-with-containers
+    expression: "variables.containerCount > 0"
+  validations:
+  - expression: |
+      !variables.isMultiContainer ||
+      (has(object.metadata.labels) && 'multi-container' in object.metadata.labels)
+    message: "multi-container pods must have a 'multi-container' label"
+    reason: Invalid
+  auditAnnotations:
+  - key: "container-count"
+    valueExpression: "string(variables.containerCount)"

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-container-labeled
+  labels:
+    multi-container: "true"
+spec:
+  containers:
+  - name: app
+    image: nginx
+  - name: sidecar
+    image: envoy

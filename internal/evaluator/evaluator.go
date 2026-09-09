@@ -59,6 +59,7 @@ func New() (*Evaluator, error) {
 		cel.Variable(plugin.ParamsVarName, cel.DynType),
 		cel.Variable(plugin.NamespaceVarName, cel.DynType),
 		cel.Variable(plugin.AuthorizerVarName, cel.DynType),
+		cel.Variable(plugin.VariableVarName, cel.DynType),
 		// Add all Kubernetes CEL function libraries
 		library.Authz(),
 		library.AuthzSelectors(),
@@ -605,6 +606,10 @@ func (e *Evaluator) EvaluateMutating(
 
 	vars := prepareMutatingVars(requestMap, primaryObject, oldObject, params, namespaceObj, authorizer, userInfo)
 
+	if err := e.evaluateVariables(policy.Spec.Variables, vars); err != nil {
+		return nil, err
+	}
+
 	matched, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate match conditions: %w", err)
@@ -712,7 +717,7 @@ func (e *Evaluator) applyMutations(
 }
 
 // EvaluateValidating evaluates a ValidatingAdmissionPolicy against an admission request.
-func (e *Evaluator) EvaluateValidating( //nolint:cyclop // Complexity is inherent in evaluating all aspects of a validating policy
+func (e *Evaluator) EvaluateValidating(
 	policy *admissionregv1.ValidatingAdmissionPolicy,
 	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
 	request *admissionv1.AdmissionRequest,
@@ -740,6 +745,11 @@ func (e *Evaluator) EvaluateValidating( //nolint:cyclop // Complexity is inheren
 	// Set up CEL variables
 	vars := e.setupValidatingVars(requestMap, object, oldObject, params, namespaceObj, authorizer, userInfo)
 
+	// Evaluate spec.variables so later expressions can reference variables.<name>
+	if err := e.evaluateVariables(policy.Spec.Variables, vars); err != nil {
+		return nil, err
+	}
+
 	// Evaluate matchConditions if present
 	matched, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars)
 	if err != nil {
@@ -758,7 +768,18 @@ func (e *Evaluator) EvaluateValidating( //nolint:cyclop // Complexity is inheren
 	}
 
 	// Evaluate validations
-	for _, validation := range policy.Spec.Validations {
+	return e.runValidations(policy.Spec.Validations, binding, auditAnnotations, vars)
+}
+
+// runValidations evaluates all validations in order. It returns the deny/warn/audit
+// result from the first failing validation, or an allow result if every validation passes.
+func (e *Evaluator) runValidations(
+	validations []admissionregv1.Validation,
+	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
+	auditAnnotations map[string]string,
+	vars map[string]any,
+) (*EvaluationResult, error) {
+	for _, validation := range validations {
 		result, err := e.evaluateExpression(validation.Expression, vars)
 		if err != nil {
 			return nil, fmt.Errorf("evaluate validation expression %q: %w", validation.Expression, err)
@@ -835,6 +856,32 @@ func (e *Evaluator) matchesMutatingNamespaceSelector(
 	}
 
 	return matchesNamespaceSelectorByLabelSelector(binding.Spec.MatchResources.NamespaceSelector, namespaceObj)
+}
+
+// evaluateVariables evaluates spec.variables in declared order and binds them
+// under the "variables" activation key, so later expressions (matchConditions,
+// validations, mutations, auditAnnotations) can reference variables.<name>.
+// Each variable is evaluated with access to the variables computed before it,
+// matching Kubernetes' ordered composition. A forward or circular reference is
+// therefore surfaced as a clear evaluation error.
+func (e *Evaluator) evaluateVariables(variables []admissionregv1.Variable, vars map[string]any) error {
+	if len(variables) == 0 {
+		return nil
+	}
+
+	computed := make(map[string]any, len(variables))
+	vars[plugin.VariableVarName] = computed
+
+	for _, variable := range variables {
+		value, err := e.evaluateExpressionRaw(variable.Expression, vars)
+		if err != nil {
+			return fmt.Errorf("evaluate variable %q: %w", variable.Name, err)
+		}
+
+		computed[variable.Name] = value
+	}
+
+	return nil
 }
 
 // evaluateMatchConditions evaluates all match conditions and returns true if all match.
