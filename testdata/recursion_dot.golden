@@ -92,10 +92,15 @@ FAIL	prevent-owner-change	0.000s
     -high-privilege-pod: 'Pod privileged-pod has privileged container: api'
     +high-privilege-pod: 'Pod privileged-pod has privileged container: app'
 FAIL	track-privileged-audit	0.000s
+
+--- FAIL: variables-forward-reference/variables-forward-reference.forward.allow.yaml (0.00s)
+    evaluation error: evaluate variable "first": evaluate: no such key: second
+FAIL	variables-forward-reference	0.000s
 ok  	add-default-labels	0.000s
 ok  	mutating-with-binding	0.000s
 ok  	namespace-selector-binding-mutating	0.000s
 ok  	sidecar-injection	0.000s
+ok  	variables-mapping	0.000s
 ok  	block-pod-exec	0.000s
 ok  	block-privileged-containers	0.000s
 ok  	block-team-ci-service-accounts	0.000s
@@ -113,3 +118,4 @@ ok  	replica-limit-with-params	0.000s
 ok  	require-labels-with-params	0.000s
 ok  	require-owner-label	0.000s
 ok  	track-privileged-audit	0.000s
+ok  	variables-composition	0.000s

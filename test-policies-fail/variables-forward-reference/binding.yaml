@@ -1,0 +1,7 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: variables-forward-reference-binding
+spec:
+  policyName: variables-forward-reference
+  validationActions: [Deny]

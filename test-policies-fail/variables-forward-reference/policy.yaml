@@ -1,0 +1,24 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: variables-forward-reference
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE"]
+      resources: ["pods"]
+  variables:
+  # 'first' references 'second' which is declared later. Kubernetes requires
+  # variables to be acyclic and sorted by first appearance, so this forward
+  # reference must be a clear evaluation error.
+  - name: first
+    expression: "variables.second + 1"
+  - name: second
+    expression: "1"
+  validations:
+  - expression: "variables.first > 0"
+    message: "first must be positive"
+    reason: Invalid

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+  labels:
+    app: test
+    mirror-prefix-count: "1"
+spec:
+  containers:
+  - name: app
+    image: nginx
