@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	celcommon "k8s.io/apiserver/pkg/cel/common"
+	"k8s.io/apiserver/pkg/cel/lazy"
 	"k8s.io/apiserver/pkg/cel/library"
 	"k8s.io/apiserver/pkg/cel/mutation"
 	"k8s.io/apiserver/pkg/cel/mutation/dynamic"
@@ -608,9 +610,7 @@ func (e *Evaluator) EvaluateMutating(
 
 	vars := prepareMutatingVars(requestMap, primaryObject, oldObject, params, namespaceObj, authorizer, userInfo)
 
-	if err := e.evaluateVariables(policy.Spec.Variables, vars); err != nil {
-		return nil, err
-	}
+	e.bindVariables(policy.Spec.Variables, vars)
 
 	matched, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars)
 	if err != nil {
@@ -760,10 +760,8 @@ func (e *Evaluator) EvaluateValidating(
 	// Set up CEL variables
 	vars := e.setupValidatingVars(requestMap, object, oldObject, params, namespaceObj, authorizer, userInfo)
 
-	// Evaluate spec.variables so later expressions can reference variables.<name>
-	if err := e.evaluateVariables(policy.Spec.Variables, vars); err != nil {
-		return nil, err
-	}
+	// Bind spec.variables lazily so later expressions can reference variables.<name>
+	e.bindVariables(policy.Spec.Variables, vars)
 
 	// Evaluate matchConditions if present
 	matched, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars)
@@ -873,30 +871,68 @@ func (e *Evaluator) matchesMutatingNamespaceSelector(
 	return matchesNamespaceSelectorByLabelSelector(binding.Spec.MatchResources.NamespaceSelector, namespaceObj)
 }
 
-// evaluateVariables evaluates spec.variables in declared order and binds them
-// under the "variables" activation key, so later expressions (matchConditions,
-// validations, mutations, auditAnnotations) can reference variables.<name>.
-// Each variable is evaluated with access to the variables computed before it,
-// matching Kubernetes' ordered composition. A forward or circular reference is
-// therefore surfaced as a clear evaluation error.
-func (e *Evaluator) evaluateVariables(variables []admissionregv1.Variable, vars map[string]any) error {
+// bindVariables binds spec.variables under the "variables" activation key as a
+// lazily-evaluated map, matching how the API server evaluates composited
+// variables: a variable's CEL expression runs only when it is referenced by an
+// expression that actually executes, and its result is then memoized. Because
+// matchConditions run before validations/mutations, a variable referenced only
+// by the latter is never evaluated for a request that fails matchConditions, and
+// an error in an unreachable variable never fails the case.
+//
+// Each variable may reference variables declared before it. That ordering is
+// enforced at evaluation time by scoping every variable's activation to the
+// variables that precede it, so a forward or circular reference still surfaces
+// as a clear "no such key" error just as it did under eager evaluation.
+func (e *Evaluator) bindVariables(variables []admissionregv1.Variable, vars map[string]any) {
 	if len(variables) == 0 {
-		return nil
+		return
 	}
 
-	computed := make(map[string]any, len(variables))
-	vars[plugin.VariableVarName] = computed
+	variablesType := types.NewObjectType("kat.internal.evaluator.variables")
+	full := lazy.NewMapValue(variablesType)
 
-	for _, variable := range variables {
-		value, err := e.evaluateExpressionRaw(variable.Expression, vars)
-		if err != nil {
-			return fmt.Errorf("evaluate variable %q: %w", variable.Name, err)
-		}
+	for i := range variables {
+		name := variables[i].Name
+		expression := variables[i].Expression
+		scope := newVariableScope(variablesType, full, variables[:i])
 
-		computed[variable.Name] = value
+		full.Append(name, func(*lazy.MapValue) ref.Val {
+			value, err := e.evaluateExpressionRaw(expression, activationWithVariables(vars, scope))
+			if err != nil {
+				return types.NewErr("evaluate variable %q: %v", name, err)
+			}
+
+			return value
+		})
 	}
 
-	return nil
+	vars[plugin.VariableVarName] = full
+}
+
+// newVariableScope returns a lazy map that exposes only the given earlier
+// variables. Resolution delegates back to full so each variable is evaluated and
+// memoized exactly once, no matter how many scopes reference it.
+func newVariableScope(variablesType *types.Type, full *lazy.MapValue, earlier []admissionregv1.Variable) *lazy.MapValue {
+	scope := lazy.NewMapValue(variablesType)
+
+	for i := range earlier {
+		name := earlier[i].Name
+		scope.Append(name, func(*lazy.MapValue) ref.Val {
+			return full.Get(types.String(name))
+		})
+	}
+
+	return scope
+}
+
+// activationWithVariables returns a shallow copy of vars with the "variables"
+// key bound to the given lazy map, leaving the caller's map untouched.
+func activationWithVariables(vars map[string]any, variables *lazy.MapValue) map[string]any {
+	scoped := make(map[string]any, len(vars)+1)
+	maps.Copy(scoped, vars)
+	scoped[plugin.VariableVarName] = variables
+
+	return scoped
 }
 
 // evaluateMatchConditions evaluates all match conditions and returns true if all match.

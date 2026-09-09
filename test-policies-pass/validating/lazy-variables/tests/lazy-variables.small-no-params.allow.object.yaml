@@ -1,0 +1,11 @@
+# A small deployment: matchConditions (replicas > 3) is false, so the
+# params-reading 'maxReplicas' variable is never evaluated. This case omits any
+# .params.yaml entirely and must still pass -- on a real cluster the request
+# never touches those variables.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: small-deployment
+  namespace: default
+spec:
+  replicas: 1

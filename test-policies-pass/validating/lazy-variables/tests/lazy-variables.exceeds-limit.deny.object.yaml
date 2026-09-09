@@ -1,0 +1,9 @@
+# Scaled-out deployment above the configured limit: matchConditions is true, both
+# variables are reachable, and the validation denies the request.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exceeds-limit-deployment
+  namespace: default
+spec:
+  replicas: 20

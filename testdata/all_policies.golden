@@ -11,6 +11,7 @@ ok  	check-authorizer	0.000s
 ok  	conditional-policy	0.000s
 ok  	delete-protection	0.000s
 ok  	deprecated-api-warn	0.000s
+ok  	lazy-variables	0.000s
 ok  	namespace-based-validation	0.000s
 ok  	namespace-selector-binding	0.000s
 ok  	namespace-selector-doesnotexist	0.000s
