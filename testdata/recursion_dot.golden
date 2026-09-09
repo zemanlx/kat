@@ -94,7 +94,7 @@ FAIL	prevent-owner-change	0.000s
 FAIL	track-privileged-audit	0.000s
 
 --- FAIL: variables-forward-reference/variables-forward-reference.forward.allow.yaml (0.00s)
-    evaluation error: evaluate variable "first": evaluate: no such key: second
+    evaluation error: evaluate validation expression "variables.first > 0": evaluate: evaluate variable "first": evaluate: no such key: second
 FAIL	variables-forward-reference	0.000s
 ok  	add-default-labels	0.000s
 ok  	image-mapper	0.000s
@@ -109,6 +109,7 @@ ok  	check-authorizer	0.000s
 ok  	conditional-policy	0.000s
 ok  	delete-protection	0.000s
 ok  	deprecated-api-warn	0.000s
+ok  	lazy-variables	0.000s
 ok  	namespace-based-validation	0.000s
 ok  	namespace-selector-binding	0.000s
 ok  	namespace-selector-doesnotexist	0.000s

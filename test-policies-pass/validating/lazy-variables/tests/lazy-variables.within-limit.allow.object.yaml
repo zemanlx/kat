@@ -1,0 +1,9 @@
+# Scaled-out deployment within the configured limit: matchConditions is true, so
+# 'maxReplicas' is evaluated (params supplied) and the validation passes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: within-limit-deployment
+  namespace: default
+spec:
+  replicas: 5

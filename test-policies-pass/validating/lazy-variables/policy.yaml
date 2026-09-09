@@ -1,0 +1,35 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: lazy-variables
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["deployments"]
+  variables:
+  # Reachable from matchConditions; never touches params.
+  - name: replicas
+    expression: "has(object.spec.replicas) ? object.spec.replicas : 1"
+  # Reads params.data and would error when params is absent. It is referenced
+  # only by the validation below, so lazy evaluation must NOT evaluate it when
+  # matchConditions is false.
+  - name: maxReplicas
+    expression: "int(params.data.maxReplicas)"
+  matchConditions:
+  # References only 'replicas'. Small deployments fail the match and therefore
+  # never reach 'maxReplicas'.
+  - name: only-scaled-out
+    expression: "variables.replicas > 3"
+  validations:
+  - expression: "variables.replicas <= variables.maxReplicas"
+    messageExpression: >-
+      'Replica count ' + string(variables.replicas) +
+      ' exceeds maximum of ' + string(variables.maxReplicas)
+    reason: Invalid

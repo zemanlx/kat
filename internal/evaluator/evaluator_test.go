@@ -957,6 +957,109 @@ func TestEvaluateValidating(t *testing.T) {
 	}
 }
 
+// TestEvaluateValidating_LazyVariables verifies that spec.variables are evaluated
+// lazily: a variable is only evaluated when an executed expression references it,
+// so an unreachable variable whose expression would error never fails the case,
+// and a later variable may reference an earlier one.
+//
+//nolint:funlen // Test function
+func TestEvaluateValidating_LazyVariables(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		policy        *admissionregv1.ValidatingAdmissionPolicy
+		object        *unstructured.Unstructured
+		expectAllowed bool
+	}{
+		{
+			name: "variable referenced only by validation is not evaluated when match conditions fail",
+			policy: &admissionregv1.ValidatingAdmissionPolicy{
+				Name: "lazy-unreachable",
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Variables: []admissionregv1.Variable{
+						// Would error (no such key) if evaluated, but it is only
+						// referenced by the validation, which never runs because
+						// the match condition below is false.
+						{Name: "boom", Expression: `object.spec.missing.deeper`},
+					},
+					MatchConditions: []admissionregv1.MatchCondition{
+						{Name: "never", Expression: `false`},
+					},
+					Validations: []admissionregv1.Validation{
+						{Expression: `variables.boom == 1`, Message: "should never run"},
+					},
+				},
+			},
+			object: &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata":   map[string]any{"name": "test-pod"},
+					"spec":       map[string]any{"containers": []any{}},
+				},
+			},
+			expectAllowed: true,
+		},
+		{
+			name: "later variable references earlier variable",
+			policy: &admissionregv1.ValidatingAdmissionPolicy{
+				Name: "var-composition",
+				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					Variables: []admissionregv1.Variable{
+						{Name: "containerCount", Expression: `object.spec.containers.size()`},
+						{Name: "doubled", Expression: `variables.containerCount * 2`},
+					},
+					Validations: []admissionregv1.Validation{
+						{Expression: `variables.doubled == 2`, Message: "expected two"},
+					},
+				},
+			},
+			object: &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata":   map[string]any{"name": "test-pod"},
+					"spec": map[string]any{
+						"containers": []any{
+							map[string]any{"name": "app", "image": "nginx"},
+						},
+					},
+				},
+			},
+			expectAllowed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tc := tt
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			evaluator, err := New()
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+
+			request := &admissionv1.AdmissionRequest{
+				UID:       types.UID("test-uid"),
+				Name:      "test-pod",
+				Namespace: "default",
+				Operation: admissionv1.Create,
+			}
+
+			result, err := evaluator.EvaluateValidating(tc.policy, nil, request, tc.object, nil, nil, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("EvaluateValidating() error = %v", err)
+			}
+
+			if result.Allowed != tc.expectAllowed {
+				t.Errorf("EvaluateValidating() Allowed = %v, want %v", result.Allowed, tc.expectAllowed)
+			}
+		})
+	}
+}
+
 func TestEvaluateValidating_MultipleValidations(t *testing.T) {
 	t.Parallel()
 

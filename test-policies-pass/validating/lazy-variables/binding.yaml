@@ -1,0 +1,11 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: lazy-variables-binding
+spec:
+  policyName: lazy-variables
+  validationActions: [Deny]
+  paramRef:
+    name: lazy-variables-config
+    namespace: default
+    parameterNotFoundAction: Deny
