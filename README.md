@@ -111,6 +111,36 @@ test summary: tests failed: 2
 
 ## Installation
 
+### Download a prebuilt binary
+
+No Go toolchain required. Prebuilt binaries for Linux, macOS, and Windows
+(`amd64` and `arm64`) are published on the [Releases](https://github.com/zemanlx/kat/releases)
+page.
+
+On Linux or macOS, download the archive for your platform, extract `kat`, and put
+it on your `PATH`:
+
+```bash
+# Pick your platform: linux/darwin and amd64/arm64
+OS=linux ARCH=amd64
+curl -fsSL "https://github.com/zemanlx/kat/releases/latest/download/kat_${OS}_${ARCH}.tar.gz" \
+  | tar -xz kat
+sudo mv kat /usr/local/bin/
+kat -h
+```
+
+On Windows, download `kat_windows_amd64.zip` (or `arm64`) from the Releases page,
+extract `kat.exe`, and place it somewhere on your `PATH`.
+
+Each release also ships a `checksums.txt` to verify your download:
+
+```bash
+curl -fsSL -O "https://github.com/zemanlx/kat/releases/latest/download/checksums.txt"
+sha256sum -c checksums.txt --ignore-missing
+```
+
+### Install with Go
+
 ```bash
 go install github.com/zemanlx/kat@latest
 ```
