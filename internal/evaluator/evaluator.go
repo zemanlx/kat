@@ -74,13 +74,15 @@ func New() (*Evaluator, error) {
 		library.Regex(),
 		library.SemverLib(), // Semantic version comparison
 		library.URLs(),
-		// Add CEL standard extensions for maximum compatibility
-		ext.Strings(),  // split(), replace(), substring(), trim(), etc.
-		ext.Lists(),    // Additional list operations
-		ext.Math(),     // Math operations (min, max, etc.)
-		ext.Encoders(), // Base64 encoding/decoding
-		ext.Sets(),     // Set operations (sets.contains, etc.)
-		// Add type resolver for JSONPatch and Object types (for mutations)
+		// CEL extensions registered by k8s.io/apiserver v0.37 environment/base.go
+		// (plus Math/Encoders, which admission does not register but existing policies use).
+		cel.OptionalTypes(), // 1.28: object.?field, .orValue()
+		ext.Encoders(),
+		ext.Lists(),
+		ext.Math(),
+		ext.Sets(), // 1.29
+		ext.Strings(),
+		ext.TwoVarComprehensions(), // 1.32: transformMap / transformMapEntry
 		celcommon.ResolverEnvOption(&mutation.DynamicTypeResolver{}),
 	}
 

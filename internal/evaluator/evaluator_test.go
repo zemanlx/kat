@@ -30,6 +30,16 @@ func TestNew(t *testing.T) {
 	if evaluator.env == nil {
 		t.Fatal("New() evaluator has nil env")
 	}
+
+	// Libraries k8s 1.28+ / 1.32+ register that kat used to omit.
+	for _, expr := range []string{
+		`object.?metadata.?labels.orValue({})`,
+		`object.metadata.labels.transformMap(k, v, k != "foo", v)`,
+	} {
+		if _, iss := evaluator.env.Compile(expr); iss != nil {
+			t.Errorf("compile %q: %v", expr, iss)
+		}
+	}
 }
 
 //nolint:gocognit,funlen,cyclop,maintidx // Test function
