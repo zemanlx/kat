@@ -174,6 +174,115 @@ func TestEvaluateMutating(t *testing.T) {
 			},
 		},
 		{
+			name: "concat two JSONPatch lists applies both ops",
+			policy: &admissionregv1.MutatingAdmissionPolicy{
+				Name: "test-policy",
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionregv1.Mutation{
+						{
+							PatchType: admissionregv1.PatchTypeJSONPatch,
+							JSONPatch: &admissionregv1.JSONPatch{
+								Expression: `[JSONPatch{op: "add", path: "/metadata/labels/a", value: "1"}]` +
+									` + [JSONPatch{op: "add", path: "/metadata/labels/b", value: "2"}]`,
+							},
+						},
+					},
+				},
+			},
+			object: &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata": map[string]any{
+						"name":   "test-pod",
+						"labels": map[string]any{},
+					},
+				},
+			},
+			expectedMutated: true,
+			expectedObject: &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata": map[string]any{
+						"name":   "test-pod",
+						"labels": map[string]any{"a": "1", "b": "2"},
+					},
+				},
+			},
+		},
+		{
+			name: "concat JSONPatch list with filter map applies add and remove",
+			policy: &admissionregv1.MutatingAdmissionPolicy{
+				Name: "test-policy",
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionregv1.Mutation{
+						{
+							PatchType: admissionregv1.PatchTypeJSONPatch,
+							JSONPatch: &admissionregv1.JSONPatch{
+								Expression: `[JSONPatch{op: "add", path: "/metadata/labels/kept", value: "yes"}]` +
+									` + object.metadata.labels.filter(k, k == "foo").map(k, JSONPatch{op: "remove", path: "/metadata/labels/" + k})`,
+							},
+						},
+					},
+				},
+			},
+			object: &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata": map[string]any{
+						"name": "test-pod",
+						"labels": map[string]any{
+							"app": "web",
+							"foo": "drop-me",
+						},
+					},
+				},
+			},
+			expectedMutated: true,
+			expectedObject: &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata": map[string]any{
+						"name": "test-pod",
+						"labels": map[string]any{
+							"app":  "web",
+							"kept": "yes",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "JSONPatch expression that is not a list is an error",
+			policy: &admissionregv1.MutatingAdmissionPolicy{
+				Name: "test-policy",
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionregv1.Mutation{
+						{
+							PatchType: admissionregv1.PatchTypeJSONPatch,
+							JSONPatch: &admissionregv1.JSONPatch{
+								Expression: `JSONPatch{op: "add", path: "/metadata/labels/a", value: "1"}`,
+							},
+						},
+					},
+				},
+			},
+			object: &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "v1",
+					"kind":       "Pod",
+					"metadata": map[string]any{
+						"name":   "test-pod",
+						"labels": map[string]any{},
+					},
+				},
+			},
+			expectedError: true,
+		},
+		{
 			name: "add audit label when replica count increased",
 			policy: &admissionregv1.MutatingAdmissionPolicy{
 				Name: "test-policy",

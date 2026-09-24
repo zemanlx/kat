@@ -1,0 +1,19 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: concat-jsonpatch
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          [JSONPatch{op: "add", path: "/metadata/labels/a", value: "1"}]
+          + [JSONPatch{op: "add", path: "/metadata/labels/b", value: "2"}]
+          + object.metadata.labels.filter(k, k == "foo").map(k, JSONPatch{op: "remove", path: "/metadata/labels/" + k})
