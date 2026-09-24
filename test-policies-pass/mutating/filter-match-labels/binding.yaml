@@ -1,0 +1,6 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: filter-match-labels-binding
+spec:
+  policyName: filter-match-labels
