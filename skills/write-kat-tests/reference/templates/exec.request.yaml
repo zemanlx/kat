@@ -1,8 +1,12 @@
 # Rename to: <policy-name>.<test-name>.<expect>.request.yaml
 # Models a subresource CONNECT (e.g. `kubectl exec`). Because there is no object,
 # the operation cannot be inferred and must be set explicitly to CONNECT.
-# `subResource` + `options` describe the exec call; adjust for logs/attach/etc.
+# `resource` + `subResource` must match the policy's resourceRules (`pods/exec`);
+# `options` describes the exec call. Adjust for logs/attach/etc.
 operation: CONNECT
+resource:
+  version: v1
+  resource: pods
 subResource: exec
 name: app-pod
 namespace: production

@@ -73,6 +73,13 @@ Operation is inferred from presence: `object` only ⇒ CREATE; `oldObject` only 
 DELETE; both ⇒ UPDATE; set `operation:` in `.request.yaml` for CONNECT. An explicit
 `operation:` that conflicts with the inferred one is an error.
 
+The policy's `matchConstraints` and the binding's `matchResources` are applied the
+same way the API server applies them (`internal/evaluator/match.go`). A request that
+doesn't match them is allowed with no mutation. The request resource comes from the
+object's kind via apimachinery's plural guess, which is right for every built-in
+kind. CONNECT tests, and CRDs with irregular plurals, set `resource:` in
+`.request.yaml`.
+
 ## Authoring tests
 
 Use the **`write-kat-tests` skill** (`skills/write-kat-tests/SKILL.md`) whenever you

@@ -9,6 +9,7 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,16 +61,17 @@ func parseTestRequestFile(testReq *testRequest) error {
 
 // simplifiedRequest represents the simplified requestYAML format.
 type simplifiedRequest struct {
-	Operation       string                     `json:"operation"`
-	SubResource     string                     `json:"subResource,omitempty"`
-	Name            string                     `json:"name,omitempty"`
-	Namespace       string                     `json:"namespace,omitempty"`
-	NamespaceObject map[string]any             `json:"namespaceObject,omitempty"`
-	UserInfo        *authenticationv1.UserInfo `json:"userInfo,omitempty"`
-	Object          map[string]any             `json:"object,omitempty"`
-	OldObject       map[string]any             `json:"oldObject,omitempty"`
-	Params          map[string]any             `json:"params,omitempty"`
-	Options         map[string]any             `json:"options,omitempty"`
+	Operation       string                       `json:"operation"`
+	Resource        *metav1.GroupVersionResource `json:"resource,omitempty"`
+	SubResource     string                       `json:"subResource,omitempty"`
+	Name            string                       `json:"name,omitempty"`
+	Namespace       string                       `json:"namespace,omitempty"`
+	NamespaceObject map[string]any               `json:"namespaceObject,omitempty"`
+	UserInfo        *authenticationv1.UserInfo   `json:"userInfo,omitempty"`
+	Object          map[string]any               `json:"object,omitempty"`
+	OldObject       map[string]any               `json:"oldObject,omitempty"`
+	Params          map[string]any               `json:"params,omitempty"`
+	Options         map[string]any               `json:"options,omitempty"`
 }
 
 // parseRequestYAML parses a simplified request format.
@@ -213,16 +215,16 @@ func buildAdmissionRequestFromSimplified(req *simplifiedRequest, testReq *testRe
 		testReq.Object = obj
 
 		gvk := obj.GroupVersionKind()
-		admReq.Resource = metav1.GroupVersionResource{
-			Group:    gvk.Group,
-			Version:  gvk.Version,
-			Resource: strings.ToLower(gvk.Kind) + "s",
-		}
+		admReq.Resource = resourceForKind(gvk)
 		admReq.Kind = metav1.GroupVersionKind{
 			Group:   gvk.Group,
 			Version: gvk.Version,
 			Kind:    gvk.Kind,
 		}
+	}
+
+	if req.Resource != nil {
+		admReq.Resource = *req.Resource
 	}
 
 	if req.Options != nil {
@@ -268,14 +270,19 @@ func buildRequestFromObject(testName string, obj *unstructured.Unstructured) *ad
 			Version: gvk.Version,
 			Kind:    gvk.Kind,
 		},
-		Resource: metav1.GroupVersionResource{
-			Group:    gvk.Group,
-			Version:  gvk.Version,
-			Resource: strings.ToLower(gvk.Kind) + "s",
-		},
+		Resource:  resourceForKind(gvk),
 		Name:      obj.GetName(),
 		Namespace: obj.GetNamespace(),
 	}
+}
+
+// resourceForKind stands in for the request URL, which is where the API server
+// takes the resource from. apimachinery's plural guess matches every built-in
+// kind; a CRD with an irregular plural needs `resource:` in a .request.yaml.
+func resourceForKind(gvk schema.GroupVersionKind) metav1.GroupVersionResource {
+	plural, _ := meta.UnsafeGuessKindToResource(gvk)
+
+	return metav1.GroupVersionResource(plural)
 }
 
 func loadAuxiliaryFiles(testReq *testRequest) error {
@@ -368,11 +375,7 @@ func parseOldObjectYAML(testReq *testRequest, data []byte) error {
 			Version: gvk.Version,
 			Kind:    gvk.Kind,
 		},
-		Resource: metav1.GroupVersionResource{
-			Group:    gvk.Group,
-			Version:  gvk.Version,
-			Resource: strings.ToLower(gvk.Kind) + "s",
-		},
+		Resource:  resourceForKind(gvk),
 		Name:      unstruct.GetName(),
 		Namespace: unstruct.GetNamespace(),
 	}

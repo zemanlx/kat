@@ -125,8 +125,11 @@ Rename each to `<policy-name>.<test-name>.<expect>.<type>.yaml` before use. The
 ## Common mistakes
 
 - Pointing `kat` at a file — it takes **directories only**. Use `-run` for one case.
-- Object doesn't match `matchConstraints`, so the policy never fires and a "deny"
-  test wrongly passes as allow. Verify apiGroup/version/resource/operation.
+- Object doesn't match `matchConstraints` (or the binding's `matchResources`), so the
+  policy never fires: a "deny" test fails and an "allow" test passes without testing
+  anything. Check the apiGroup, version, resource, operation, `excludeResourceRules`
+  and `objectSelector`. CONNECT tests need `resource:` (e.g. `{version: v1, resource: pods}`)
+  plus `subResource:` in the `.request.yaml`.
 - Wrong `<expect>` token (only `deny` flips the expectation). Do not add an
   `<expect>` token to mutating-policy tests — they always allow; assert via `.gold.yaml`.
 - Mutating policy without a `.gold.yaml`.

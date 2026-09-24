@@ -279,6 +279,55 @@ params:
 	}
 }
 
+func TestResourceForKind(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		gvk  schema.GroupVersionKind
+		want string
+	}{
+		{schema.GroupVersionKind{Version: "v1", Kind: "Pod"}, "pods"},
+		{schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"}, "networkpolicies"},
+		{schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}, "ingresses"},
+		{schema.GroupVersionKind{Version: "v1", Kind: "Endpoints"}, "endpoints"},
+		{schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "CSIStorageCapacity"}, "csistoragecapacities"},
+		{schema.GroupVersionKind{Group: "example.com", Version: "v1", Kind: "Widget"}, "widgets"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.gvk.Kind, func(t *testing.T) {
+			t.Parallel()
+
+			got := resourceForKind(tt.gvk)
+			if got.Resource != tt.want || got.Group != tt.gvk.Group || got.Version != tt.gvk.Version {
+				t.Errorf("resourceForKind(%v) = %v, want resource %q", tt.gvk, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseRequestYAML_ResourceOverride(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`
+operation: CONNECT
+subResource: exec
+resource:
+  version: v1
+  resource: pods
+`)
+	req := &testRequest{Name: "exec", FilePath: filepath.Join(t.TempDir(), "exec.request.yaml")}
+
+	if err := parseRequestYAML(req, content); err != nil {
+		t.Fatalf("parseRequestYAML() error = %v", err)
+	}
+
+	got := req.Request.Resource
+	if got.Group != "" || got.Version != "v1" || got.Resource != "pods" || req.Request.SubResource != "exec" {
+		t.Errorf("Resource = %v, SubResource = %q; want v1 pods, exec", got, req.Request.SubResource)
+	}
+}
+
 //nolint:funlen // Test function length is due to YAML test data.
 func TestParseRequestYAML_GoldFile(t *testing.T) {
 	t.Parallel()
