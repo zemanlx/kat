@@ -40,7 +40,7 @@ var (
 	errApplyConfigNotObject     = errors.New("apply configuration must return Object")
 	errConvertCELUnexpectedType = errors.New("convertCELValue returned unexpected type")
 	errUnexpectedPatchType      = errors.New("unexpected patch type")
-	errConversionNotSupported   = errors.New("conversion not supported")
+	errJSONPatchNotList         = errors.New("JSONPatch expression should evaluate to a list")
 	errNoPolicy                 = errors.New("no policy provided")
 )
 
@@ -719,7 +719,7 @@ func (e *Evaluator) applyMutation(
 			return object, nil
 		}
 
-		return e.applyJSONPatches([]any{patch}, object)
+		return e.applyJSONPatches(patch, object)
 	case admissionregv1.PatchTypeApplyConfiguration:
 		config, err := e.evaluateApplyConfigurationMutation(mutation, vars)
 		if err != nil {
@@ -1030,17 +1030,19 @@ func convertAdmissionRequest(req *admissionv1.AdmissionRequest) (map[string]any,
 	return result, nil
 }
 
-// evaluateJSONPatchMutation evaluates a JSONPatch mutation and returns the patch result.
+// evaluateJSONPatchMutation evaluates a JSONPatch mutation and returns the CEL list.
+// The CEL value must not be unwrapped: list concatenation (ext.Lists +) yields a
+// native Go slice from Value(), which is not a traits.Lister.
 func (e *Evaluator) evaluateJSONPatchMutation(
 	mutation admissionregv1.Mutation,
 	vars map[string]any,
-) (any, error) {
+) (ref.Val, error) {
 	if mutation.JSONPatch == nil {
 		//nolint:nilnil // No patch to evaluate, no error
 		return nil, nil
 	}
 
-	patchResult, err := e.evaluateExpression(mutation.JSONPatch.Expression, vars)
+	patchResult, err := e.evaluateExpressionRaw(mutation.JSONPatch.Expression, vars)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate JSONPatch expression: %w", err)
 	}
@@ -1086,24 +1088,17 @@ func (e *Evaluator) evaluateApplyConfigurationMutation(
 
 // Follows the Kubernetes pattern from k8s.io/apiserver/pkg/admission/plugin/policy/mutating/patch/json_patch.go.
 func (e *Evaluator) applyJSONPatches(
-	patches []any,
+	patch ref.Val,
 	object *unstructured.Unstructured,
 ) (*unstructured.Unstructured, error) {
-	if len(patches) == 0 {
-		return object.DeepCopy(), nil
+	iter, ok := patch.(traits.Lister)
+	if !ok {
+		return nil, fmt.Errorf("%w: %T", errJSONPatchNotList, patch)
 	}
 
 	result := jsonpatch.Patch{}
-
-	for _, p := range patches {
-		iter, skip := listerFromPatch(p)
-		if skip {
-			continue
-		}
-
-		if err := appendPatchOperations(iter.Iterator(), &result); err != nil {
-			return nil, err
-		}
+	if err := appendPatchOperations(iter.Iterator(), &result); err != nil {
+		return nil, err
 	}
 
 	if len(result) == 0 {
@@ -1111,18 +1106,6 @@ func (e *Evaluator) applyJSONPatches(
 	}
 
 	return applyPatchOperations(result, object)
-}
-
-func listerFromPatch(p any) (traits.Lister, bool) {
-	if iter, ok := p.(traits.Lister); ok {
-		return iter, false
-	}
-
-	if celArr, ok := p.([]ref.Val); ok {
-		return &refValList{values: celArr}, false
-	}
-
-	return nil, true
 }
 
 func appendPatchOperations(iter traits.Iterator, result *jsonpatch.Patch) error {
@@ -1268,108 +1251,4 @@ func convertCELValue(val any) any {
 	}
 
 	return val
-}
-
-// refValList is a simple wrapper to make []ref.Val implement traits.Lister.
-type refValList struct {
-	values []ref.Val
-}
-
-func (l *refValList) Add(value ref.Val) ref.Val {
-	l.values = append(l.values, value)
-
-	return l
-}
-
-func (l *refValList) Get(index ref.Val) ref.Val {
-	if i, ok := index.Value().(int64); ok {
-		if i >= 0 && i < int64(len(l.values)) {
-			return l.values[i]
-		}
-	}
-
-	return types.NewErr("index out of bounds")
-}
-
-func (l *refValList) Size() ref.Val {
-	return types.Int(len(l.values))
-}
-
-func (l *refValList) Iterator() traits.Iterator {
-	return &refValIterator{values: l.values, index: 0}
-}
-
-func (l *refValList) Contains(value ref.Val) ref.Val {
-	for _, v := range l.values {
-		if v.Equal(value) == types.True {
-			return types.True
-		}
-	}
-
-	return types.False
-}
-
-func (l *refValList) ConvertToNative(_ reflect.Type) (any, error) {
-	return nil, errConversionNotSupported
-}
-
-func (l *refValList) ConvertToType(_ ref.Type) ref.Val {
-	return types.NewErr("conversion not supported")
-}
-
-func (l *refValList) Equal(_ ref.Val) ref.Val {
-	return types.False
-}
-
-func (l *refValList) Type() ref.Type {
-	return types.ListType
-}
-
-func (l *refValList) Value() any {
-	return l.values
-}
-
-// refValIterator implements traits.Iterator for []ref.Val.
-type refValIterator struct {
-	values []ref.Val
-	index  int
-}
-
-func (it *refValIterator) HasNext() ref.Val {
-	if it.index < len(it.values) {
-		return types.True
-	}
-
-	return types.False
-}
-
-func (it *refValIterator) Next() ref.Val {
-	if it.index < len(it.values) {
-		v := it.values[it.index]
-		it.index++
-
-		return v
-	}
-
-	return types.NewErr("iterator exhausted")
-}
-
-func (it *refValIterator) ConvertToNative(_ reflect.Type) (any, error) {
-	return nil, errConversionNotSupported
-}
-
-func (it *refValIterator) ConvertToType(_ ref.Type) ref.Val {
-	return types.NewErr("conversion not supported")
-}
-
-func (it *refValIterator) Equal(_ ref.Val) ref.Val {
-	return types.False
-}
-
-func (it *refValIterator) Type() ref.Type {
-	return types.IteratorType
-}
-
-func (it *refValIterator) Value() any {
-	return it
 }
