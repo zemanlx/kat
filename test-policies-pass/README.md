@@ -42,6 +42,7 @@ This directory contains comprehensive test policies covering all major features 
 
 - 🔧 `no-labels` - Deployment without labels (environment: dev added)
 - 🔧 `has-environment` - Deployment with environment: prod (no change)
+- 🔧 `update-skips` - UPDATE is not in the CREATE-only `resourceRules`, so nothing is mutated
 
 ---
 
@@ -177,6 +178,7 @@ This directory contains comprehensive test policies covering all major features 
 **Features tested:**
 
 - `CONNECT` operation handling
+- `pods/exec` subresource `resourceRules`, with `resource:` set in `.request.yaml`
 - `subResource` checking ('exec')
 - Complex boolean logic combining `userInfo`, `namespaceObject`, and request attributes
 
@@ -219,6 +221,30 @@ This directory contains comprehensive test policies covering all major features 
 
 - ✅ `same-owner.allow` - UPDATE with same owner label
 - ❌ `changed-owner.deny` - UPDATE changing owner from platform-team to security-team
+- ✅ `create-skips.allow` - CREATE is not in the UPDATE-only `resourceRules`, so the policy does not run
+
+---
+
+#### `match-resources/`
+
+**Purpose:** Checks that `kat` decides whether a policy applies the same way the API server does.
+
+**Features tested:**
+
+- `resourceRules` matched rule by rule (operation, apiGroup, apiVersion, resource)
+- `excludeResourceRules` with `resourceNames`
+- `objectSelector`
+- Resource inferred from kind (`NetworkPolicy` → `networkpolicies`)
+
+**Test cases:**
+
+- ❌ `pod-create.deny` - Pod CREATE matches the pods rule
+- ✅ `pod-update-not-in-pod-rule.allow` - UPDATE is only listed on the deployments rule
+- ❌ `deployment-update.deny` - Deployment UPDATE matches the deployments rule
+- ✅ `deployment-create-not-in-rule.allow` - CREATE is only listed on the pods rule
+- ❌ `networkpolicy-create.deny` - NetworkPolicy matches `networkpolicies`
+- ✅ `excluded-by-name.allow` - `exempt-pod` is excluded
+- ✅ `opted-out-by-object-selector.allow` - `skip-policy` label opts out
 
 ---
 

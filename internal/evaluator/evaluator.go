@@ -19,9 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/labels"
 	plugin "k8s.io/apiserver/pkg/admission/plugin/cel"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -590,11 +588,16 @@ func (e *Evaluator) EvaluateMutating(
 	authorizer authorizer.Authorizer,
 	userInfo user.Info,
 ) (*EvaluationResult, error) {
-	// Evaluate binding's namespaceSelector if present
-	if matched, err := e.matchesMutatingNamespaceSelector(binding, namespaceObj); err != nil {
-		return nil, fmt.Errorf("evaluate namespace selector: %w", err)
-	} else if !matched {
-		// Namespace selector doesn't match, policy doesn't apply
+	var bindingResources *admissionregv1.MatchResources
+	if binding != nil {
+		bindingResources = binding.Spec.MatchResources
+	}
+
+	if applies, err := policyApplies(
+		policy.Spec.MatchConstraints, bindingResources, request, object, oldObject, namespaceObj,
+	); err != nil {
+		return nil, fmt.Errorf("evaluate match resources: %w", err)
+	} else if !applies {
 		return &EvaluationResult{Allowed: true}, nil
 	}
 
@@ -743,11 +746,16 @@ func (e *Evaluator) EvaluateValidating(
 	authorizer authorizer.Authorizer,
 	userInfo user.Info,
 ) (*EvaluationResult, error) {
-	// Evaluate binding's namespaceSelector if present
-	if matched, err := e.matchesNamespaceSelector(binding, namespaceObj); err != nil {
-		return nil, fmt.Errorf("evaluate namespace selector: %w", err)
-	} else if !matched {
-		// Namespace selector doesn't match, policy doesn't apply
+	var bindingResources *admissionregv1.MatchResources
+	if binding != nil {
+		bindingResources = binding.Spec.MatchResources
+	}
+
+	if applies, err := policyApplies(
+		policy.Spec.MatchConstraints, bindingResources, request, object, oldObject, namespaceObj,
+	); err != nil {
+		return nil, fmt.Errorf("evaluate match resources: %w", err)
+	} else if !applies {
 		return &EvaluationResult{Allowed: true}, nil
 	}
 
@@ -813,62 +821,6 @@ func (e *Evaluator) runValidations(
 		Allowed:          true,
 		AuditAnnotations: auditAnnotations,
 	}, nil
-}
-
-// matchesNamespaceSelectorByLabelSelector checks if the namespace object's labels match the given label selector.
-// Returns true if the selector is nil, empty, or matches the namespace labels.
-func matchesNamespaceSelectorByLabelSelector(
-	labelSelector *metav1.LabelSelector,
-	namespaceObj *unstructured.Unstructured,
-) (bool, error) {
-	if labelSelector == nil {
-		return true, nil
-	}
-
-	// Convert LabelSelector to labels.Selector
-	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
-	if err != nil {
-		return false, fmt.Errorf("parse namespace selector: %w", err)
-	}
-
-	// Empty selector matches everything
-	if selector.Empty() {
-		return true, nil
-	}
-
-	// No namespace object provided - can't evaluate selector
-	if namespaceObj == nil {
-		return true, nil
-	}
-
-	// Check if namespace labels match the selector
-	return selector.Matches(labels.Set(namespaceObj.GetLabels())), nil
-}
-
-// matchesNamespaceSelector checks if the namespace object's labels match the binding's namespace selector.
-// Returns true if the selector matches (policy should be evaluated), false otherwise.
-func (e *Evaluator) matchesNamespaceSelector(
-	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
-	namespaceObj *unstructured.Unstructured,
-) (bool, error) {
-	if binding == nil || binding.Spec.MatchResources == nil {
-		return true, nil
-	}
-
-	return matchesNamespaceSelectorByLabelSelector(binding.Spec.MatchResources.NamespaceSelector, namespaceObj)
-}
-
-// matchesMutatingNamespaceSelector checks if the namespace object's labels match the mutating binding's namespace selector.
-// Returns true if the selector matches (policy should be evaluated), false otherwise.
-func (e *Evaluator) matchesMutatingNamespaceSelector(
-	binding *admissionregv1.MutatingAdmissionPolicyBinding,
-	namespaceObj *unstructured.Unstructured,
-) (bool, error) {
-	if binding == nil || binding.Spec.MatchResources == nil {
-		return true, nil
-	}
-
-	return matchesNamespaceSelectorByLabelSelector(binding.Spec.MatchResources.NamespaceSelector, namespaceObj)
 }
 
 // bindVariables binds spec.variables under the "variables" activation key as a

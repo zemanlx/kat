@@ -66,7 +66,22 @@ Recognized as test **inputs** (8):
 ```
 
 `.request.yaml` fields: `operation`, `object`, `oldObject`, `params`,
-`namespaceObject`, `userInfo`, `namespace`, `name`, `subResource`, `options`.
+`namespaceObject`, `userInfo`, `namespace`, `name`, `resource`, `subResource`, `options`.
+
+`resource` (`{group, version, resource}`) is derived from the object's kind. Set it
+for CONNECT (`{version: v1, resource: pods}` + `subResource: exec`) or a CRD with an
+irregular plural.
+
+## Policy matching
+
+Before any CEL runs, the request must match both the policy's `matchConstraints`
+and the binding's `matchResources`, the same way the API server matches them:
+`namespaceSelector`, `objectSelector`, `excludeResourceRules`, then `resourceRules`.
+Each rule must match on its own (operation, apiGroup, apiVersion,
+resource/subresource, scope, resourceNames). A request that doesn't match is
+**allowed with no mutation**, so an allow test passes silently if the object doesn't
+fit the rules. `matchPolicy: Equivalent` is treated as `Exact`. A `namespaceSelector`
+only filters when a `namespaceObject` is provided.
 
 ## Companion assertion files
 

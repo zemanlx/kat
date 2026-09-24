@@ -296,6 +296,7 @@ Available fields in `.request.yaml`:
 | `userInfo` | User making the request |
 | `namespace` | Shorthand for request namespace |
 | `name` | Shorthand for request name |
+| `resource` | Request resource `{group, version, resource}`, derived from the object's kind. Set it for CONNECT (`{version: v1, resource: pods}` + `subResource: exec`) or a CRD with an irregular plural |
 | `subResource` | Sub-resource being accessed (e.g., `status`) |
 | `options` | Additional options for the request |
 
@@ -393,6 +394,12 @@ Authoring a test is a short loop:
   to be **allowed** and rely on their companion file for the real assertion.
 - Make sure the object actually matches the policy's `matchConstraints`
   (apiGroup/version/resource/operation) — otherwise the policy never fires.
+  `kat` applies the policy's `matchConstraints` and the binding's `matchResources`
+  the way the API server does: `resourceRules` (each rule on its own), `excludeResourceRules`,
+  `resourceNames`, `scope`, `objectSelector` and `namespaceSelector`. A request that
+  doesn't match is allowed without running any CEL.
+- `matchPolicy: Equivalent` is evaluated as `Exact` (there's no API discovery offline).
+  A `namespaceSelector` only filters when the test provides a `namespaceObject`.
 - A mutating policy that mutates the object **requires** a `.gold.yaml`.
 - Defining the same field in both `.request.yaml` and a split file is an error.
 - Assertions are exact: deny message equals `.message.txt` (trimmed), warnings match

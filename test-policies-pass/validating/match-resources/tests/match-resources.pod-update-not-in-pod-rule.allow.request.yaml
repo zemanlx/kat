@@ -1,0 +1,21 @@
+# UPDATE is listed only on the deployments rule, so a Pod UPDATE is not matched.
+object:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: web
+    namespace: default
+  spec:
+    containers:
+    - name: app
+      image: nginx:1.25
+oldObject:
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: web
+    namespace: default
+  spec:
+    containers:
+    - name: app
+      image: nginx:1.24
