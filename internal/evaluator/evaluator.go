@@ -267,6 +267,19 @@ func getDiff(expected, actual string) string {
 	return diff
 }
 
+// Evaluate evaluates the test case's inputs against the policy and returns kat's
+// raw result, without comparing it to the test case's expectations. A nil result
+// with a nil error means no policy was provided.
+func (e *Evaluator) Evaluate(
+	mutatingPolicy *admissionregv1.MutatingAdmissionPolicy,
+	mutatingBinding *admissionregv1.MutatingAdmissionPolicyBinding,
+	validatingPolicy *admissionregv1.ValidatingAdmissionPolicy,
+	validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding,
+	testCase TestCase,
+) (*EvaluationResult, error) {
+	return e.evaluatePolicy(mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding, testCase)
+}
+
 // evaluatePolicy evaluates the appropriate policy (mutating or validating) and returns the result.
 func (e *Evaluator) evaluatePolicy(
 	mutatingPolicy *admissionregv1.MutatingAdmissionPolicy,

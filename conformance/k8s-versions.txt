@@ -1,0 +1,5 @@
+# Kubernetes minor versions the conformance tests run against, one per line,
+# as setup-envtest version selectors. Keep in sync with the conformance matrix
+# in .github/workflows/ci.yml.
+1.36.x
+1.37.x

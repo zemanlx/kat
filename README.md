@@ -13,6 +13,12 @@
 
 `kat` is a lightweight, local testing tool for Kubernetes Admission Policies (ValidatingAdmissionPolicy and MutatingAdmissionPolicy). It allows you to write test cases using standard Kubernetes manifests and verify your policies' behavior without needing a running cluster.
 
+`kat` supports **Kubernetes 1.36 and later**, the first release that serves both
+policy kinds as `admissionregistration.k8s.io/v1`. A Kubernetes minor version stays
+supported until it reaches its [upstream end of life](https://kubernetes.io/releases/).
+Every supported minor is checked in CI against a real kube-apiserver (see
+[Conformance with the API server](#conformance-with-the-api-server)).
+
 ## Quick Start
 
 Given a policy like this:
@@ -405,6 +411,23 @@ Authoring a test is a short loop:
 - Assertions are exact: deny message equals `.message.txt` (trimmed), warnings match
   by line/index, audit annotations match the listed keys exactly.
 - Only `admissionregistration.k8s.io/v1` is supported; `v1beta1` is a hard error.
+- As in the API server, `matchConditions` cannot reference `variables`, and
+  `namespaceObject` is null inside them. A condition that fails to evaluate denies the
+  request under `failurePolicy: Fail` (the default) and skips the policy under `Ignore`.
+- When a binding's `paramRef` finds no params, `parameterNotFoundAction: Deny` denies
+  the request before any expression runs, and `Allow` skips the policy.
+- CEL list and map literals must be homogeneous, as in the API server. Build
+  mixed-type values with typed literals such as `Object.spec.containers{name: "a", ports: [...]}`.
+- `kat` does not validate policies the way the API server does on creation, for
+  example that a MutatingAdmissionPolicy sets `reinvocationPolicy`.
+
+## Conformance with the API server
+
+The [`conformance/`](./conformance/) module checks `kat` against a real kube-apiserver
+(started by [envtest](https://book.kubebuilder.io/reference/envtest)) for every case in
+`test-policies-pass/` and `test-policies-fail/`, on every supported Kubernetes version.
+Run it with `./hack/conformance.sh`; see [`AGENTS.md`](./AGENTS.md#conformance-tests)
+for details.
 
 ## For AI agents
 

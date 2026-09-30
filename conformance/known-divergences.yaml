@@ -1,0 +1,30 @@
+# Cases that are expected to differ from a real kube-apiserver. A listed case
+# must fail the conformance comparison; once it matches, the test fails with
+# "unexpected pass" so the entry gets removed. See "Conformance tests" in
+# AGENTS.md.
+#
+# Fields:
+#   suite:       fixture suite directory, relative to the repository root
+#   case:        test name without ".yaml"; omit to cover the whole suite
+#   minVersion:  first Kubernetes minor the entry applies to (optional)
+#   maxVersion:  last Kubernetes minor the entry applies to (optional)
+#   reason:      why kat and the server differ
+#   issue:       link to the tracking issue (optional)
+divergences:
+- suite: test-policies-pass/validating/deprecated-api-warn
+  case: deprecated-api.old-version.warn
+  reason: >-
+    The fixture creates an apps/v1beta1 Deployment. The API server stopped
+    serving apps/v1beta1 in Kubernetes 1.16, so the request can never reach
+    admission on a supported server; only kat can evaluate it.
+- suite: test-policies-fail/deprecated-api-warn
+  case: deprecated-api.old-version.warn
+  reason: >-
+    The fixture creates an apps/v1beta1 Deployment, which the API server has
+    not served since Kubernetes 1.16.
+- suite: test-policies-pass/validating/variables-composition
+  case: variables-composition.no-containers.allow
+  reason: >-
+    The fixture is a Pod with no containers. Pod validation requires at least
+    one container and runs before validating admission, so the server rejects
+    the object before the policy is evaluated.

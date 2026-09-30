@@ -7,8 +7,6 @@ import (
 	"os"
 	"runtime/debug"
 
-	admissionregv1 "k8s.io/api/admissionregistration/v1"
-
 	"github.com/zemanlx/kat/internal/evaluator"
 	"github.com/zemanlx/kat/internal/loader"
 	"github.com/zemanlx/kat/internal/reporter"
@@ -136,7 +134,7 @@ func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.T
 	for _, test := range suite.Tests {
 		suiteRep.StartTest(test.Name)
 
-		mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding := findPolicies(suite, test.PolicyName)
+		mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding := suite.FindPolicies(test.PolicyName)
 
 		if mutatingPolicy == nil && validatingPolicy == nil {
 			suiteRep.ReportFail(test.Name, fmt.Sprintf("policy %q not found", test.PolicyName))
@@ -151,51 +149,6 @@ func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.T
 	}
 
 	return nil
-}
-
-func findPolicies(suite *loader.TestSuite, policyName string) (*admissionregv1.MutatingAdmissionPolicy, *admissionregv1.MutatingAdmissionPolicyBinding, *admissionregv1.ValidatingAdmissionPolicy, *admissionregv1.ValidatingAdmissionPolicyBinding) {
-	var (
-		mutatingPolicy    *admissionregv1.MutatingAdmissionPolicy
-		mutatingBinding   *admissionregv1.MutatingAdmissionPolicyBinding
-		validatingPolicy  *admissionregv1.ValidatingAdmissionPolicy
-		validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding
-	)
-
-	for _, policy := range suite.MutatingPolicies {
-		if policy.Name == policyName {
-			mutatingPolicy = policy
-			// Find matching binding
-			for _, binding := range suite.MutatingBindings {
-				if binding.Spec.PolicyName == policy.Name {
-					mutatingBinding = binding
-
-					break
-				}
-			}
-
-			break
-		}
-	}
-
-	if mutatingPolicy == nil {
-		for _, policy := range suite.ValidatingPolicies {
-			if policy.Name == policyName {
-				validatingPolicy = policy
-				// Find matching binding
-				for _, binding := range suite.ValidatingBindings {
-					if binding.Spec.PolicyName == policy.Name {
-						validatingBinding = binding
-
-						break
-					}
-				}
-
-				break
-			}
-		}
-	}
-
-	return mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding
 }
 
 func getVersion() string {

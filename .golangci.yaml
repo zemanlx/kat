@@ -19,6 +19,10 @@ linters:
     - testpackage
     - varnamelen
     - wsl # deprecated; superseded by wsl_v5 (kept via default: all)
+  settings:
+    gomoddirectives:
+      # conformance/go.mod replaces github.com/zemanlx/kat with the checkout.
+      replace-local: true
   exclusions:
     generated: lax
     presets:
