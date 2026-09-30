@@ -545,7 +545,7 @@ func TestEvaluateMutating(t *testing.T) {
 							PatchType: admissionregv1.PatchTypeJSONPatch,
 							JSONPatch: &admissionregv1.JSONPatch{
 								// Adding a complex container with nested env vars
-								Expression: `[JSONPatch{op: "add", path: "/spec/containers", value: [{"name": "nginx", "image": "nginx:latest", "env": [{"name": "ENV", "value": "prod"}], "ports": [{"containerPort": 80}]}]}]`,
+								Expression: `[JSONPatch{op: "add", path: "/spec/containers", value: [Object.spec.containers{name: "nginx", image: "nginx:latest", env: [Object.spec.containers.env{name: "ENV", value: "prod"}], ports: [Object.spec.containers.ports{containerPort: 80}]}]}]`,
 							},
 						},
 					},
@@ -640,7 +640,7 @@ func TestEvaluateMutating(t *testing.T) {
 							PatchType: admissionregv1.PatchTypeApplyConfiguration,
 							ApplyConfiguration: &admissionregv1.ApplyConfiguration{
 								// Complex nested structure with arrays and objects
-								Expression: `Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{containers: [{"name": "sidecar", "image": "sidecar:v1", "env": [{"name": "MODE", "value": "inject"}]}]}}}}`,
+								Expression: `Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{containers: [Object.spec.template.spec.containers{name: "sidecar", image: "sidecar:v1", env: [Object.spec.template.spec.containers.env{name: "MODE", value: "inject"}]}]}}}}`,
 							},
 						},
 					},
@@ -683,7 +683,7 @@ func TestEvaluateMutating(t *testing.T) {
 							PatchType: admissionregv1.PatchTypeApplyConfiguration,
 							ApplyConfiguration: &admissionregv1.ApplyConfiguration{
 								// Add volumes array with complex nested structure
-								Expression: `Object{spec: {"volumes": [{"name": "config", "configMap": {"name": "app-config", "items": [{"key": "config.yaml", "path": "config.yaml"}]}}]}}`,
+								Expression: `Object{spec: Object.spec{volumes: [Object.spec.volumes{name: "config", configMap: Object.spec.volumes.configMap{name: "app-config", items: [Object.spec.volumes.configMap.items{key: "config.yaml", path: "config.yaml"}]}}]}}`,
 							},
 						},
 					},
@@ -751,7 +751,7 @@ func TestEvaluateMutating(t *testing.T) {
 								// Multiple patches in one mutation with nested values
 								Expression: `[
 									JSONPatch{op: "add", path: "/metadata/labels", value: {"tier": "backend", "version": "v1"}},
-									JSONPatch{op: "add", path: "/spec/strategy", value: {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": 0}}}
+									JSONPatch{op: "add", path: "/spec/strategy", value: Object.spec.strategy{type: "RollingUpdate", rollingUpdate: Object.spec.strategy.rollingUpdate{maxSurge: "25%", maxUnavailable: 0}}}
 								]`,
 							},
 						},
@@ -1384,13 +1384,54 @@ func TestEvaluateMatchConditions(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
+	ignore := admissionregv1.Ignore
+
 	tests := []struct {
-		name       string
-		conditions []admissionregv1.MatchCondition
-		vars       map[string]any
-		want       bool
-		wantErr    bool
+		name          string
+		conditions    []admissionregv1.MatchCondition
+		vars          map[string]any
+		failurePolicy *admissionregv1.FailurePolicyType
+		want          bool
+		wantFailure   string
+		wantErr       bool
 	}{
+		{
+			name:        "runtime error fails the request under failurePolicy Fail",
+			conditions:  []admissionregv1.MatchCondition{{Name: "test", Expression: "object.missing == 1"}},
+			vars:        map[string]any{"object": map[string]any{}},
+			want:        false,
+			wantFailure: "expression 'object.missing == 1' resulted in error: no such key: missing",
+		},
+		{
+			name:          "runtime error skips the policy under failurePolicy Ignore",
+			conditions:    []admissionregv1.MatchCondition{{Name: "test", Expression: "object.missing == 1"}},
+			vars:          map[string]any{"object": map[string]any{}},
+			failurePolicy: &ignore,
+			want:          false,
+		},
+		{
+			name: "false condition wins over a runtime error",
+			conditions: []admissionregv1.MatchCondition{
+				{Name: "error", Expression: "object.missing == 1"},
+				{Name: "false", Expression: "false"},
+			},
+			vars: map[string]any{"object": map[string]any{}},
+			want: false,
+		},
+		{
+			name:        "namespaceObject is not available",
+			conditions:  []admissionregv1.MatchCondition{{Name: "test", Expression: "namespaceObject.metadata.name == 'default'"}},
+			vars:        map[string]any{"namespaceObject": map[string]any{"metadata": map[string]any{"name": "default"}}},
+			want:        false,
+			wantFailure: "expression 'namespaceObject.metadata.name == 'default'' resulted in error: no such key: metadata",
+		},
+		{
+			name:       "variables cannot be referenced",
+			conditions: []admissionregv1.MatchCondition{{Name: "test", Expression: "variables.x"}},
+			vars:       map[string]any{"variables": map[string]any{"x": true}},
+			want:       false,
+			wantErr:    true,
+		},
 		{
 			name:       "no conditions - should match",
 			conditions: []admissionregv1.MatchCondition{},
@@ -1461,15 +1502,15 @@ func TestEvaluateMatchConditions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := evaluator.evaluateMatchConditions(tc.conditions, tc.vars)
+			got, failure, err := evaluator.evaluateMatchConditions(tc.conditions, tc.vars, tc.failurePolicy)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("evaluateMatchConditions() error = %v, wantErr %v", err, tc.wantErr)
 
 				return
 			}
 
-			if got != tc.want {
-				t.Errorf("evaluateMatchConditions() = %v, want %v", got, tc.want)
+			if got != tc.want || failure != tc.wantFailure {
+				t.Errorf("evaluateMatchConditions() = %v, %q, want %v, %q", got, failure, tc.want, tc.wantFailure)
 			}
 		})
 	}
@@ -1999,7 +2040,7 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{Expression: "false", Message: "warn1"},
-						{Expression: "false", Message: "warn2"},
+						{Expression: "true", Message: "warn2"},
 					},
 				},
 			},
@@ -2111,5 +2152,97 @@ func TestEvaluateMutating_JSONPatchListOfObjects(t *testing.T) {
 
 	if len(constraints) != 1 {
 		t.Fatalf("expected 1 constraint, got %d", len(constraints))
+	}
+}
+
+func TestCheckVariableReferences(t *testing.T) {
+	t.Parallel()
+
+	e, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		variables   []admissionregv1.Variable
+		expressions []string
+		wantErr     bool
+	}{
+		{
+			name:        "earlier variables and declared names",
+			variables:   []admissionregv1.Variable{{Name: "a", Expression: "1"}, {Name: "b", Expression: "variables.a + 1"}},
+			expressions: []string{"variables.b > 0", "has(variables.a)"},
+		},
+		{
+			name:      "forward reference",
+			variables: []admissionregv1.Variable{{Name: "a", Expression: "variables.b"}, {Name: "b", Expression: "1"}},
+			wantErr:   true,
+		},
+		{
+			name:        "undeclared name in another expression",
+			variables:   []admissionregv1.Variable{{Name: "a", Expression: "1"}},
+			expressions: []string{"variables.typo > 0"},
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := e.checkVariableReferences(tt.variables, tt.expressions); (err != nil) != tt.wantErr {
+				t.Errorf("checkVariableReferences() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestEvaluateValidating_Failures covers how failing validations combine, as in
+// the API server: Warn reports every failure, and Deny denies with the first.
+func TestEvaluateValidating_Failures(t *testing.T) {
+	t.Parallel()
+
+	e, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	policy := &admissionregv1.ValidatingAdmissionPolicy{Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+		Validations: []admissionregv1.Validation{
+			{Expression: "false", Message: " first "},
+			{Expression: "true", Message: "passes"},
+			{Expression: "object.missing == 1"},
+			{Expression: "false", MessageExpression: "'multi\\nline'"},
+		},
+	}}
+	object := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Pod"}}
+	request := &admissionv1.AdmissionRequest{Operation: admissionv1.Create}
+	want := []string{
+		"first",
+		"expression 'object.missing == 1' resulted in error: no such key: missing",
+		"failed expression: false",
+	}
+
+	evaluate := func(action admissionregv1.ValidationAction) *EvaluationResult {
+		binding := &admissionregv1.ValidatingAdmissionPolicyBinding{Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+			ValidationActions: []admissionregv1.ValidationAction{action},
+		}}
+
+		result, err := e.EvaluateValidating(policy, binding, request, object, nil, nil, nil, nil, nil)
+		if err != nil {
+			t.Fatalf("%s: EvaluateValidating() error = %v", action, err)
+		}
+
+		return result
+	}
+
+	if got := evaluate(admissionregv1.Warn); !got.Allowed || !cmp.Equal(got.Warnings, want) {
+		t.Errorf("Warn: Allowed = %v, Warnings = %q, want true, %q", got.Allowed, got.Warnings, want)
+	}
+
+	if got := evaluate(admissionregv1.Deny); got.Allowed || got.Message != want[0] || len(got.Warnings) != 0 {
+		t.Errorf("Deny: Allowed = %v, Message = %q, Warnings = %q, want false, %q, none",
+			got.Allowed, got.Message, got.Warnings, want[0])
 	}
 }

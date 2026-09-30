@@ -325,7 +325,7 @@ This directory contains comprehensive test policies covering all major features 
 
 **Features tested:**
 
-- `matchConditions` with namespace labels
+- `matchConditions` on `request.namespace` (match conditions cannot read `namespaceObject`)
 - Policy skipping when conditions don't match
 - Test failure when policy is expected to apply but is skipped
 

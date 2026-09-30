@@ -7,3 +7,14 @@ metadata:
   namespace: default
 spec:
   replicas: 20
+  selector:
+    matchLabels:
+      app: exceeds-limit
+  template:
+    metadata:
+      labels:
+        app: exceeds-limit
+    spec:
+      containers:
+      - name: nginx
+        image: nginx

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/google/cel-go/cel"
+	celast "github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
@@ -42,6 +44,7 @@ var (
 	errUnexpectedPatchType      = errors.New("unexpected patch type")
 	errJSONPatchNotList         = errors.New("JSONPatch expression should evaluate to a list")
 	errNoPolicy                 = errors.New("no policy provided")
+	errUndeclaredVariable       = errors.New("reference to an undeclared variable")
 )
 
 const diffContextLines = 3
@@ -49,19 +52,32 @@ const diffContextLines = 3
 // Evaluator evaluates admission policies using CEL expressions.
 type Evaluator struct {
 	env *cel.Env
+	// matchEnv compiles matchConditions, which cannot reference variables.
+	matchEnv *cel.Env
 }
 
 // New creates a new Evaluator with a CEL environment configured for Kubernetes admission policies.
 func New() (*Evaluator, error) {
 	// Build environment options with all Kubernetes CEL libraries
 	envOpts := []cel.EnvOption{
+		// Options of the API server's base environment
+		// (k8s.io/apiserver v0.37 pkg/cel/environment/base.go).
+		cel.HomogeneousAggregateLiterals(),
+		cel.EagerlyValidateDeclarations(true),
+		cel.DefaultUTCTimeZone(true),
+		cel.CrossTypeNumericComparisons(true),
+		cel.ASTValidators(
+			cel.ValidateDurationLiterals(),
+			cel.ValidateTimestampLiterals(),
+			cel.ValidateRegexLiterals(),
+			cel.ValidateHomogeneousAggregateLiterals(),
+		),
 		cel.Variable(plugin.ObjectVarName, cel.DynType),
 		cel.Variable(plugin.OldObjectVarName, cel.DynType),
 		cel.Variable(plugin.RequestVarName, cel.DynType),
 		cel.Variable(plugin.ParamsVarName, cel.DynType),
 		cel.Variable(plugin.NamespaceVarName, cel.DynType),
 		cel.Variable(plugin.AuthorizerVarName, cel.DynType),
-		cel.Variable(plugin.VariableVarName, cel.DynType),
 		// Add all Kubernetes CEL function libraries
 		library.Authz(),
 		library.AuthzSelectors(),
@@ -86,12 +102,17 @@ func New() (*Evaluator, error) {
 		celcommon.ResolverEnvOption(&mutation.DynamicTypeResolver{}),
 	}
 
-	env, err := cel.NewEnv(envOpts...)
+	matchEnv, err := cel.NewEnv(envOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create CEL environment: %w", err)
 	}
 
-	return &Evaluator{env: env}, nil
+	env, err := matchEnv.Extend(cel.Variable(plugin.VariableVarName, cel.DynType))
+	if err != nil {
+		return nil, fmt.Errorf("create CEL environment: %w", err)
+	}
+
+	return &Evaluator{env: env, matchEnv: matchEnv}, nil
 }
 
 // TestCase represents a test case with inputs and expected outcomes.
@@ -425,58 +446,62 @@ func checkMutatedObject(expected *TestExpectation, actual *TestOutcome) *TestRes
 	return nil
 }
 
-// handleValidationFailure handles the case when validation fails, determining the appropriate action.
-func (e *Evaluator) handleValidationFailure(validation *admissionregv1.Validation, binding *admissionregv1.ValidatingAdmissionPolicyBinding, auditAnnotations map[string]string, vars map[string]any) (*EvaluationResult, error) {
-	message := validation.Message
-
-	// If messageExpression is provided, evaluate it
+// validationMessage returns a failed validation's message the way the API
+// server picks it: a usable messageExpression result, else message, else the
+// expression itself. A messageExpression that errors, is not a string, is
+// blank or spans lines falls back to message.
+func (e *Evaluator) validationMessage(validation *admissionregv1.Validation, vars map[string]any) string {
 	if validation.MessageExpression != "" {
-		msgResult, err := e.evaluateExpression(validation.MessageExpression, vars)
-		if err != nil {
-			return nil, fmt.Errorf("evaluate messageExpression %q: %w", validation.MessageExpression, err)
+		result, err := e.evaluateExpression(validation.MessageExpression, vars)
+		if msg, ok := result.(string); err == nil && ok {
+			msg = strings.TrimSpace(msg)
+			if msg != "" && !strings.Contains(msg, "\n") {
+				return msg
+			}
 		}
-
-		if msgStr, ok := msgResult.(string); ok && strings.TrimSpace(msgStr) != "" {
-			message = msgStr
-		}
 	}
 
-	if message == "" {
-		message = "validation failed: " + validation.Expression
+	if msg := strings.TrimSpace(validation.Message); msg != "" {
+		return msg
 	}
 
-	// Check binding actions
-	action := e.getValidationAction(binding)
-	switch action {
-	case admissionregv1.Warn:
-		return &EvaluationResult{
-			Allowed:          true,
-			Warnings:         []string{message},
-			AuditAnnotations: auditAnnotations,
-		}, nil
-	case admissionregv1.Audit:
-		return &EvaluationResult{
-			Allowed:          true,
-			AuditAnnotations: auditAnnotations,
-		}, nil
-	case admissionregv1.Deny:
-		fallthrough
-	default:
-		return &EvaluationResult{
-			Allowed:          false,
-			Message:          message,
-			AuditAnnotations: auditAnnotations,
-		}, nil
-	}
+	return "failed expression: " + strings.TrimSpace(validation.Expression)
 }
 
-// getValidationAction returns the validation action to take (Warn, Audit, or Deny).
-func (e *Evaluator) getValidationAction(binding *admissionregv1.ValidatingAdmissionPolicyBinding) admissionregv1.ValidationAction {
-	if binding == nil || len(binding.Spec.ValidationActions) == 0 {
-		return ""
+// failuresResult applies the binding's validationActions to the failure
+// messages: Warn reports each of them as a warning, and Deny denies with the
+// first. A missing binding or empty validationActions denies.
+func failuresResult(
+	failures []string,
+	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
+	auditAnnotations map[string]string,
+) *EvaluationResult {
+	result := &EvaluationResult{Allowed: true, AuditAnnotations: auditAnnotations}
+	if len(failures) == 0 {
+		return result
 	}
 
-	return binding.Spec.ValidationActions[0]
+	actions := []admissionregv1.ValidationAction{admissionregv1.Deny}
+	if binding != nil && len(binding.Spec.ValidationActions) > 0 {
+		actions = binding.Spec.ValidationActions
+	}
+
+	if slices.Contains(actions, admissionregv1.Warn) {
+		result.Warnings = failures
+	}
+
+	if slices.Contains(actions, admissionregv1.Deny) {
+		result.Allowed = false
+		result.Message = failures[0]
+	}
+
+	return result
+}
+
+// ignoresFailures reports whether the policy's failurePolicy is Ignore; the
+// API server defaults it to Fail.
+func ignoresFailures(failurePolicy *admissionregv1.FailurePolicyType) bool {
+	return failurePolicy != nil && *failurePolicy == admissionregv1.Ignore
 }
 
 // setupValidatingVars sets up CEL variables for validating evaluation.
@@ -590,17 +615,8 @@ func (e *Evaluator) EvaluateMutating(
 	authorizer authorizer.Authorizer,
 	userInfo user.Info,
 ) (*EvaluationResult, error) {
-	var bindingResources *admissionregv1.MatchResources
-	if binding != nil {
-		bindingResources = binding.Spec.MatchResources
-	}
-
-	if applies, err := policyApplies(
-		policy.Spec.MatchConstraints, bindingResources, request, object, oldObject, namespaceObj,
-	); err != nil {
-		return nil, fmt.Errorf("evaluate match resources: %w", err)
-	} else if !applies {
-		return &EvaluationResult{Allowed: true}, nil
+	if result, err := e.preflight(mutatingShape(policy, binding), request, object, oldObject, params, namespaceObj); result != nil || err != nil {
+		return result, err
 	}
 
 	requestMap, err := convertAdmissionRequest(request)
@@ -617,9 +633,13 @@ func (e *Evaluator) EvaluateMutating(
 
 	e.bindVariables(policy.Spec.Variables, vars)
 
-	matched, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars)
+	matched, failure, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars, policy.Spec.FailurePolicy)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate match conditions: %w", err)
+	}
+
+	if failure != "" {
+		return &EvaluationResult{Allowed: false, Message: failure}, nil
 	}
 
 	if !matched {
@@ -635,6 +655,102 @@ func (e *Evaluator) EvaluateMutating(
 		Allowed:       true,
 		PatchedObject: patchedObject,
 	}, nil
+}
+
+// policyShape is what the checks made before evaluating any expression need
+// to know about a policy and its binding.
+type policyShape struct {
+	constraints      *admissionregv1.MatchResources
+	bindingResources *admissionregv1.MatchResources
+	paramKind        *admissionregv1.ParamKind
+	paramRef         *admissionregv1.ParamRef
+	failurePolicy    *admissionregv1.FailurePolicyType
+	variables        []admissionregv1.Variable
+	expressions      []string
+}
+
+func mutatingShape(policy *admissionregv1.MutatingAdmissionPolicy, binding *admissionregv1.MutatingAdmissionPolicyBinding) policyShape {
+	shape := policyShape{
+		constraints:   policy.Spec.MatchConstraints,
+		paramKind:     policy.Spec.ParamKind,
+		failurePolicy: policy.Spec.FailurePolicy,
+		variables:     policy.Spec.Variables,
+		expressions:   mutatingExpressions(&policy.Spec),
+	}
+	if binding != nil {
+		shape.bindingResources, shape.paramRef = binding.Spec.MatchResources, binding.Spec.ParamRef
+	}
+
+	return shape
+}
+
+func validatingShape(policy *admissionregv1.ValidatingAdmissionPolicy, binding *admissionregv1.ValidatingAdmissionPolicyBinding) policyShape {
+	shape := policyShape{
+		constraints:   policy.Spec.MatchConstraints,
+		paramKind:     policy.Spec.ParamKind,
+		failurePolicy: policy.Spec.FailurePolicy,
+		variables:     policy.Spec.Variables,
+		expressions:   validatingExpressions(&policy.Spec),
+	}
+	if binding != nil {
+		shape.bindingResources, shape.paramRef = binding.Spec.MatchResources, binding.Spec.ParamRef
+	}
+
+	return shape
+}
+
+// preflight makes the API server's checks that come before any expression is
+// evaluated. It returns a result when they already decide the request: the
+// policy or binding does not match, or its params are missing. An invalid
+// variable reference is an error, since the server rejects such a policy.
+func (e *Evaluator) preflight(
+	shape policyShape,
+	request *admissionv1.AdmissionRequest,
+	object, oldObject, params, namespaceObj *unstructured.Unstructured,
+) (*EvaluationResult, error) {
+	if err := e.checkVariableReferences(shape.variables, shape.expressions); err != nil {
+		return nil, err
+	}
+
+	applies, err := policyApplies(shape.constraints, shape.bindingResources, request, object, oldObject, namespaceObj)
+	if err != nil {
+		return nil, fmt.Errorf("evaluate match resources: %w", err)
+	}
+
+	if !applies {
+		return &EvaluationResult{Allowed: true}, nil
+	}
+
+	return missingParamsResult(shape.paramKind, shape.paramRef, params, shape.failurePolicy), nil
+}
+
+// missingParamsMessage is the API server's message when a binding's paramRef
+// finds no params and its parameterNotFoundAction is Deny.
+const missingParamsMessage = "failed to configure binding: no params found for policy binding with `Deny` parameterNotFoundAction"
+
+// missingParamsResult mirrors the API server when the policy has a paramKind,
+// the binding has a paramRef, and no params were found: parameterNotFoundAction
+// Deny rejects the request before any expression runs (unless failurePolicy is
+// Ignore), and otherwise the binding is skipped. It returns nil when params are
+// present or not referenced.
+func missingParamsResult(
+	paramKind *admissionregv1.ParamKind,
+	paramRef *admissionregv1.ParamRef,
+	params *unstructured.Unstructured,
+	failurePolicy *admissionregv1.FailurePolicyType,
+) *EvaluationResult {
+	if paramKind == nil || paramRef == nil || params != nil {
+		return nil
+	}
+
+	deny := paramRef.ParameterNotFoundAction != nil && *paramRef.ParameterNotFoundAction == admissionregv1.DenyAction
+	ignore := failurePolicy != nil && *failurePolicy == admissionregv1.Ignore
+
+	if deny && !ignore {
+		return &EvaluationResult{Allowed: false, Message: missingParamsMessage}
+	}
+
+	return &EvaluationResult{Allowed: true}
 }
 
 func getPrimaryObject(object, oldObject *unstructured.Unstructured) *unstructured.Unstructured {
@@ -748,17 +864,8 @@ func (e *Evaluator) EvaluateValidating(
 	authorizer authorizer.Authorizer,
 	userInfo user.Info,
 ) (*EvaluationResult, error) {
-	var bindingResources *admissionregv1.MatchResources
-	if binding != nil {
-		bindingResources = binding.Spec.MatchResources
-	}
-
-	if applies, err := policyApplies(
-		policy.Spec.MatchConstraints, bindingResources, request, object, oldObject, namespaceObj,
-	); err != nil {
-		return nil, fmt.Errorf("evaluate match resources: %w", err)
-	} else if !applies {
-		return &EvaluationResult{Allowed: true}, nil
+	if result, err := e.preflight(validatingShape(policy, binding), request, object, oldObject, params, namespaceObj); result != nil || err != nil {
+		return result, err
 	}
 
 	// Convert admission request
@@ -773,10 +880,13 @@ func (e *Evaluator) EvaluateValidating(
 	// Bind spec.variables lazily so later expressions can reference variables.<name>
 	e.bindVariables(policy.Spec.Variables, vars)
 
-	// Evaluate matchConditions if present
-	matched, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars)
+	matched, failure, err := e.evaluateMatchConditions(policy.Spec.MatchConditions, vars, policy.Spec.FailurePolicy)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate match conditions: %w", err)
+	}
+
+	if failure != "" {
+		return failuresResult([]string{failure}, binding, nil), nil
 	}
 
 	if !matched {
@@ -790,39 +900,51 @@ func (e *Evaluator) EvaluateValidating(
 		return nil, err
 	}
 
-	// Evaluate validations
-	return e.runValidations(policy.Spec.Validations, binding, auditAnnotations, vars)
+	failures, err := e.runValidations(policy.Spec.Validations, policy.Spec.FailurePolicy, vars)
+	if err != nil {
+		return nil, err
+	}
+
+	return failuresResult(failures, binding, auditAnnotations), nil
 }
 
-// runValidations evaluates all validations in order. It returns the deny/warn/audit
-// result from the first failing validation, or an allow result if every validation passes.
+// runValidations evaluates every validation, as the API server does, and
+// returns the failure messages in order. A validation that fails to evaluate
+// is a failure unless the policy's failurePolicy is Ignore.
 func (e *Evaluator) runValidations(
 	validations []admissionregv1.Validation,
-	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
-	auditAnnotations map[string]string,
+	failurePolicy *admissionregv1.FailurePolicyType,
 	vars map[string]any,
-) (*EvaluationResult, error) {
+) ([]string, error) {
+	var failures []string
+
 	for _, validation := range validations {
 		result, err := e.evaluateExpression(validation.Expression, vars)
-		if err != nil {
+
+		var runtimeErr *runtimeError
+
+		switch {
+		case errors.As(err, &runtimeErr):
+			if !ignoresFailures(failurePolicy) {
+				failures = append(failures, runtimeErr.Error())
+			}
+
+			continue
+		case err != nil:
 			return nil, fmt.Errorf("evaluate validation expression %q: %w", validation.Expression, err)
 		}
 
-		// If validation returns false, deny
 		allowed, ok := result.(bool)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s returned %T", errValidationNonBoolean, validation.Expression, result)
 		}
 
 		if !allowed {
-			return e.handleValidationFailure(&validation, binding, auditAnnotations, vars)
+			failures = append(failures, e.validationMessage(&validation, vars))
 		}
 	}
 
-	return &EvaluationResult{
-		Allowed:          true,
-		AuditAnnotations: auditAnnotations,
-	}, nil
+	return failures, nil
 }
 
 // bindVariables binds spec.variables under the "variables" activation key as a
@@ -863,6 +985,104 @@ func (e *Evaluator) bindVariables(variables []admissionregv1.Variable, vars map[
 	vars[plugin.VariableVarName] = full
 }
 
+// checkVariableReferences mirrors the API server's compile-time check of
+// variables.<name> references: a variable may only reference variables
+// declared before it, and the policy's other expressions only declared ones.
+func (e *Evaluator) checkVariableReferences(variables []admissionregv1.Variable, expressions []string) error {
+	declared := make(map[string]bool, len(variables))
+
+	check := func(expression string) error {
+		names, err := e.referencedVariables(expression)
+		if err != nil {
+			return err
+		}
+
+		for _, name := range names {
+			if !declared[name] {
+				return fmt.Errorf("compile expression %q: %w: undefined field '%s'", expression, errUndeclaredVariable, name)
+			}
+		}
+
+		return nil
+	}
+
+	for _, v := range variables {
+		if err := check(v.Expression); err != nil {
+			return fmt.Errorf("variable %q: %w", v.Name, err)
+		}
+
+		declared[v.Name] = true
+	}
+
+	for _, expression := range expressions {
+		if expression == "" {
+			continue
+		}
+
+		if err := check(expression); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// referencedVariables returns the names selected from variables, as in
+// variables.name or has(variables.name).
+func (e *Evaluator) referencedVariables(expression string) ([]string, error) {
+	parsed, issues := e.env.Parse(expression)
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("compile expression: %w", issues.Err())
+	}
+
+	selects := celast.MatchDescendants(celast.NavigateAST(parsed.NativeRep()), func(expr celast.NavigableExpr) bool {
+		if expr.Kind() != celast.SelectKind {
+			return false
+		}
+
+		operand := expr.AsSelect().Operand()
+
+		return operand.Kind() == celast.IdentKind && operand.AsIdent() == plugin.VariableVarName
+	})
+
+	names := make([]string, 0, len(selects))
+	for _, s := range selects {
+		names = append(names, s.AsSelect().FieldName())
+	}
+
+	return names, nil
+}
+
+func validatingExpressions(spec *admissionregv1.ValidatingAdmissionPolicySpec) []string {
+	out := make([]string, 0, 2*len(spec.Validations)+len(spec.AuditAnnotations))
+
+	for _, v := range spec.Validations {
+		out = append(out, v.Expression, v.MessageExpression)
+	}
+
+	for _, a := range spec.AuditAnnotations {
+		out = append(out, a.ValueExpression)
+	}
+
+	return out
+}
+
+func mutatingExpressions(spec *admissionregv1.MutatingAdmissionPolicySpec) []string {
+	var out []string
+
+	for _, m := range spec.Mutations {
+		if m.JSONPatch != nil {
+			out = append(out, m.JSONPatch.Expression)
+		}
+
+		if m.ApplyConfiguration != nil {
+			out = append(out, m.ApplyConfiguration.Expression)
+		}
+	}
+
+	return out
+}
+
 // newVariableScope returns a lazy map that exposes only the given earlier
 // variables. Resolution delegates back to full so each variable is evaluated and
 // memoized exactly once, no matter how many scopes reference it.
@@ -889,26 +1109,71 @@ func activationWithVariables(vars map[string]any, variables *lazy.MapValue) map[
 	return scoped
 }
 
-// evaluateMatchConditions evaluates all match conditions and returns true if all match.
-func (e *Evaluator) evaluateMatchConditions(conditions []admissionregv1.MatchCondition, vars map[string]any) (bool, error) {
+// evaluateMatchConditions evaluates the match conditions the way the API
+// server does. Match conditions cannot reference variables, and the server
+// evaluates them without a namespaceObject. Any false condition means no
+// match. Otherwise, conditions that fail to evaluate produce a failure message
+// under failurePolicy Fail, or no match under Ignore.
+func (e *Evaluator) evaluateMatchConditions(
+	conditions []admissionregv1.MatchCondition,
+	vars map[string]any,
+	failurePolicy *admissionregv1.FailurePolicyType,
+) (bool, string, error) {
+	matchVars := maps.Clone(vars)
+	delete(matchVars, plugin.VariableVarName)
+	matchVars[plugin.NamespaceVarName] = nil
+
+	var failures []string
+
 	for _, condition := range conditions {
-		result, err := e.evaluateExpression(condition.Expression, vars)
-		if err != nil {
-			return false, fmt.Errorf("evaluate match condition %q: %w", condition.Name, err)
+		result, err := evaluateIn(e.matchEnv, condition.Expression, matchVars)
+
+		var runtimeErr *runtimeError
+
+		switch {
+		case errors.As(err, &runtimeErr):
+			failures = append(failures, runtimeErr.Error())
+
+			continue
+		case err != nil:
+			return false, "", fmt.Errorf("evaluate match condition %q: %w", condition.Name, err)
 		}
 
-		matched, ok := result.(bool)
+		matched, ok := result.Value().(bool)
 		if !ok {
-			return false, fmt.Errorf("%w: %s returned %T", errMatchConditionNonBoolean, condition.Name, result)
+			return false, "", fmt.Errorf("%w: %s returned %T", errMatchConditionNonBoolean, condition.Name, result.Value())
 		}
 
 		if !matched {
-			return false, nil
+			return false, "", nil
 		}
 	}
 
-	return true, nil
+	switch {
+	case len(failures) == 0:
+		return true, "", nil
+	case ignoresFailures(failurePolicy):
+		return false, "", nil
+	case len(failures) == 1:
+		return false, failures[0], nil
+	default:
+		return false, "[" + strings.Join(failures, ", ") + "]", nil
+	}
 }
+
+// runtimeError is an expression that compiled but failed to evaluate. The
+// API server applies the policy's failurePolicy to these, whereas it rejects
+// a policy whose expressions do not compile.
+type runtimeError struct {
+	expression string
+	err        error
+}
+
+func (e *runtimeError) Error() string {
+	return fmt.Sprintf("expression '%s' resulted in error: %v", e.expression, e.err)
+}
+
+func (e *runtimeError) Unwrap() error { return e.err }
 
 // evaluateExpression evaluates a single CEL expression with the given variables.
 func (e *Evaluator) evaluateExpression(expression string, vars map[string]any) (any, error) {
@@ -922,19 +1187,25 @@ func (e *Evaluator) evaluateExpression(expression string, vars map[string]any) (
 
 // evaluateExpressionRaw evaluates a CEL expression and returns the raw CEL value without unwrapping.
 func (e *Evaluator) evaluateExpressionRaw(expression string, vars map[string]any) (ref.Val, error) {
-	ast, issues := e.env.Compile(expression)
+	return evaluateIn(e.env, expression, vars)
+}
+
+// evaluateIn compiles and evaluates a CEL expression in env. Evaluation
+// failures are returned as *runtimeError.
+func evaluateIn(env *cel.Env, expression string, vars map[string]any) (ref.Val, error) {
+	ast, issues := env.Compile(expression)
 	if issues != nil && issues.Err() != nil {
 		return nil, fmt.Errorf("compile expression: %w", issues.Err())
 	}
 
-	prg, err := e.env.Program(ast)
+	prg, err := env.Program(ast)
 	if err != nil {
 		return nil, fmt.Errorf("create program: %w", err)
 	}
 
 	result, _, err := prg.Eval(vars)
 	if err != nil {
-		return nil, fmt.Errorf("evaluate: %w", err)
+		return nil, &runtimeError{expression: expression, err: err}
 	}
 
 	return result, nil

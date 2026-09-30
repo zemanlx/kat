@@ -3,6 +3,7 @@ kind: MutatingAdmissionPolicy
 metadata:
   name: image-mapper
 spec:
+  reinvocationPolicy: Never
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
@@ -22,7 +23,7 @@ spec:
     applyConfiguration:
       expression: >-
         Object{spec: Object.spec{containers: [
-          {"name": "app", "image": "registry.example/app",
-           "env": [{"name": "INJECTED", "value": "true"}]},
-          {"name": "istio-proxy", "image": "registry.example/istio-proxy"}
+          Object.spec.containers{name: "app", image: "registry.example/app",
+            env: [Object.spec.containers.env{name: "INJECTED", value: "true"}]},
+          Object.spec.containers{name: "istio-proxy", image: "registry.example/istio-proxy"}
         ]}}

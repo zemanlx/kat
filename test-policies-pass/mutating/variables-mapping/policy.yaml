@@ -3,6 +3,7 @@ kind: MutatingAdmissionPolicy
 metadata:
   name: variables-mapping
 spec:
+  reinvocationPolicy: Never
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
@@ -16,8 +17,8 @@ spec:
   - name: prefixCount
     expression: "variables.prefixes.size()"
   matchConditions:
-  - name: has-prefixes
-    expression: "variables.prefixCount > 0"
+  - name: has-containers
+    expression: "has(object.spec.containers)"
   mutations:
   - patchType: ApplyConfiguration
     applyConfiguration:

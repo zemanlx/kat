@@ -7,3 +7,4 @@ spec:
   paramRef:
     name: label-config
     namespace: default
+    parameterNotFoundAction: Allow

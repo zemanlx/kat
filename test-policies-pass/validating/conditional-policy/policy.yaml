@@ -11,8 +11,9 @@ spec:
       operations: ["CREATE", "UPDATE"]
       resources: ["deployments"]
   matchConditions:
+  # namespaceObject is not available to match conditions; use the request.
   - name: 'only-production'
-    expression: "has(namespaceObject.metadata.labels) && 'environment' in namespaceObject.metadata.labels && namespaceObject.metadata.labels.environment == 'prod'"
+    expression: "request.namespace == 'production'"
   validations:
   - expression: "object.spec.replicas >= 3"
     message: "Production deployments must have at least 3 replicas"

@@ -17,7 +17,7 @@ spec:
     expression: "variables.containerCount > 1"
   matchConditions:
   - name: only-pods-with-containers
-    expression: "variables.containerCount > 0"
+    expression: "has(object.spec.containers) && object.spec.containers.size() > 0"
   validations:
   - expression: |
       !variables.isMultiContainer ||

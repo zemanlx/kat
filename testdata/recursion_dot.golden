@@ -94,7 +94,7 @@ FAIL	prevent-owner-change	0.000s
 FAIL	track-privileged-audit	0.000s
 
 --- FAIL: variables-forward-reference/variables-forward-reference.forward.allow.yaml (0.00s)
-    evaluation error: evaluate validation expression "variables.first > 0": evaluate: evaluate variable "first": evaluate: no such key: second
+    evaluation error: variable "first": compile expression "variables.second + 1": reference to an undeclared variable: undefined field 'second'
 FAIL	variables-forward-reference	0.000s
 ok  	add-default-labels	0.000s
 ok  	concat-jsonpatch	0.000s

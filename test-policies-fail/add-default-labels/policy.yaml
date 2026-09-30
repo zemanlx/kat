@@ -3,6 +3,7 @@ kind: MutatingAdmissionPolicy
 metadata:
   name: add-default-labels
 spec:
+  reinvocationPolicy: Never
   failurePolicy: Fail
   matchConstraints:
     resourceRules:

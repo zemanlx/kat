@@ -19,7 +19,7 @@ spec:
         container.securityContext.privileged == false
       )
     messageExpression: "'Privileged container detected: ' + object.spec.containers.filter(container, has(container.securityContext) && has(container.securityContext.privileged) && container.securityContext.privileged == true)[0].name"
-    reason: Warn
+    reason: Forbidden
   auditAnnotations:
   - key: "high-privilege-pod"
     valueExpression: |

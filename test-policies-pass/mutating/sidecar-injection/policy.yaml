@@ -3,6 +3,7 @@ kind: MutatingAdmissionPolicy
 metadata:
   name: sidecar-injection
 spec:
+  reinvocationPolicy: Never
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
@@ -18,10 +19,10 @@ spec:
           JSONPatch{
             op: 'add',
             path: '/spec/containers/-',
-            value: {
-              'name': 'istio-proxy',
-              'image': 'istio/proxyv2:1.20.0',
-              'ports': [{'containerPort': 15090, 'protocol': 'TCP', 'name': 'http-envoy-prom'}]
+            value: Object.spec.containers{
+              name: 'istio-proxy',
+              image: 'istio/proxyv2:1.20.0',
+              ports: [Object.spec.containers.ports{containerPort: 15090, protocol: 'TCP', name: 'http-envoy-prom'}]
             }
           }
         ]

@@ -101,12 +101,7 @@ func parseRequestYAML(testReq *testRequest, data []byte) error {
 		testReq.Params = &unstructured.Unstructured{Object: req.Params}
 	}
 
-	// Load gold file if present (for mutating policies tested via request.yaml).
-	if err := loadGoldFile(testReq); err != nil {
-		return err
-	}
-
-	return nil
+	return loadAuxiliaryFiles(testReq)
 }
 
 func validateSimplifiedRequest(req *simplifiedRequest) error {
@@ -211,15 +206,34 @@ func buildAdmissionRequestFromSimplified(req *simplifiedRequest, testReq *testRe
 	}
 
 	if req.Object != nil {
-		obj := &unstructured.Unstructured{Object: req.Object}
-		testReq.Object = obj
+		testReq.Object = &unstructured.Unstructured{Object: req.Object}
+	}
 
-		gvk := obj.GroupVersionKind()
+	// The request describes object, or oldObject for a DELETE.
+	var described *unstructured.Unstructured
+
+	switch {
+	case req.Object != nil:
+		described = testReq.Object
+	case req.OldObject != nil:
+		described = &unstructured.Unstructured{Object: req.OldObject}
+	}
+
+	if described != nil {
+		gvk := described.GroupVersionKind()
 		admReq.Resource = resourceForKind(gvk)
 		admReq.Kind = metav1.GroupVersionKind{
 			Group:   gvk.Group,
 			Version: gvk.Version,
 			Kind:    gvk.Kind,
+		}
+
+		if admReq.Name == "" {
+			admReq.Name = described.GetName()
+		}
+
+		if admReq.Namespace == "" {
+			admReq.Namespace = described.GetNamespace()
 		}
 	}
 

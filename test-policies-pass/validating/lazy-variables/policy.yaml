@@ -14,7 +14,7 @@ spec:
       operations: ["CREATE", "UPDATE"]
       resources: ["deployments"]
   variables:
-  # Reachable from matchConditions; never touches params.
+  # Never touches params.
   - name: replicas
     expression: "has(object.spec.replicas) ? object.spec.replicas : 1"
   # Reads params.data and would error when params is absent. It is referenced
@@ -23,10 +23,10 @@ spec:
   - name: maxReplicas
     expression: "int(params.data.maxReplicas)"
   matchConditions:
-  # References only 'replicas'. Small deployments fail the match and therefore
-  # never reach 'maxReplicas'.
+  # Match conditions cannot reference variables. Small deployments fail the
+  # match, so the validation below, and with it 'maxReplicas', never runs.
   - name: only-scaled-out
-    expression: "variables.replicas > 3"
+    expression: "has(object.spec.replicas) && object.spec.replicas > 3"
   validations:
   - expression: "variables.replicas <= variables.maxReplicas"
     messageExpression: >-

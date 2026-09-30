@@ -696,3 +696,94 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 		})
 	}
 }
+
+// TestEvaluate_MissingParams covers a binding whose paramRef finds no params,
+// which the API server resolves from parameterNotFoundAction before any
+// expression runs.
+//
+//nolint:funlen // Table-driven test
+func TestEvaluate_MissingParams(t *testing.T) {
+	t.Parallel()
+
+	deny := admissionregv1.DenyAction
+	allow := admissionregv1.AllowAction
+	ignore := admissionregv1.Ignore
+
+	tests := []struct {
+		name          string
+		action        *admissionregv1.ParameterNotFoundActionType
+		failurePolicy *admissionregv1.FailurePolicyType
+		wantAllowed   bool
+		wantMessage   string
+	}{
+		{name: "deny", action: &deny, wantAllowed: false, wantMessage: missingParamsMessage},
+		{name: "deny with failurePolicy Ignore", action: &deny, failurePolicy: &ignore, wantAllowed: true},
+		{name: "allow skips the binding", action: &allow, wantAllowed: true},
+		{name: "unset skips the binding", wantAllowed: true},
+	}
+
+	object := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata":   map[string]any{"name": "test-pod"},
+	}}
+	request := &admissionv1.AdmissionRequest{Operation: admissionv1.Create}
+	paramKind := &admissionregv1.ParamKind{APIVersion: "v1", Kind: "ConfigMap"}
+
+	e, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			paramRef := &admissionregv1.ParamRef{Name: "config", ParameterNotFoundAction: tt.action}
+
+			validating, err := e.EvaluateValidating(
+				&admissionregv1.ValidatingAdmissionPolicy{Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+					ParamKind:     paramKind,
+					FailurePolicy: tt.failurePolicy,
+					Validations:   []admissionregv1.Validation{{Expression: "false", Message: "evaluated"}},
+				}},
+				&admissionregv1.ValidatingAdmissionPolicyBinding{Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+					ParamRef:          paramRef,
+					ValidationActions: []admissionregv1.ValidationAction{admissionregv1.Deny},
+				}},
+				request, object, nil, nil, nil, nil, nil,
+			)
+			if err != nil {
+				t.Fatalf("EvaluateValidating() error = %v", err)
+			}
+
+			if validating.Allowed != tt.wantAllowed || validating.Message != tt.wantMessage {
+				t.Errorf("validating = {Allowed: %v, Message: %q}, want {%v, %q}",
+					validating.Allowed, validating.Message, tt.wantAllowed, tt.wantMessage)
+			}
+
+			mutating, err := e.EvaluateMutating(
+				&admissionregv1.MutatingAdmissionPolicy{Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					ParamKind:     paramKind,
+					FailurePolicy: tt.failurePolicy,
+					Mutations: []admissionregv1.Mutation{{
+						PatchType: admissionregv1.PatchTypeJSONPatch,
+						JSONPatch: &admissionregv1.JSONPatch{Expression: `[JSONPatch{op: "add", path: "/metadata/labels", value: {}}]`},
+					}},
+				}},
+				&admissionregv1.MutatingAdmissionPolicyBinding{Spec: admissionregv1.MutatingAdmissionPolicyBindingSpec{
+					ParamRef: paramRef,
+				}},
+				request, object, nil, nil, nil, nil, nil,
+			)
+			if err != nil {
+				t.Fatalf("EvaluateMutating() error = %v", err)
+			}
+
+			if mutating.Allowed != tt.wantAllowed || mutating.Message != tt.wantMessage || mutating.PatchedObject != nil {
+				t.Errorf("mutating = {Allowed: %v, Message: %q, Patched: %v}, want {%v, %q, nil}",
+					mutating.Allowed, mutating.Message, mutating.PatchedObject != nil, tt.wantAllowed, tt.wantMessage)
+			}
+		})
+	}
+}

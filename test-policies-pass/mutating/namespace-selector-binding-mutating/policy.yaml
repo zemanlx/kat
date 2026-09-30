@@ -3,6 +3,7 @@ kind: MutatingAdmissionPolicy
 metadata:
   name: namespace-selector-binding-mutating-test
 spec:
+  reinvocationPolicy: Never
   matchConstraints:
     resourceRules:
       - apiGroups: [""]
