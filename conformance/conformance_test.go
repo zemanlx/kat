@@ -67,6 +67,8 @@ type shardRun struct {
 	shard *shard
 	srv   *server
 	eval  *evaluator.Evaluator
+	// k8sVersion is the server's major.minor, which kat is told to behave like.
+	k8sVersion string
 }
 
 func TestConformance(t *testing.T) {
@@ -129,7 +131,9 @@ func artifactsDir(t *testing.T, suiteID string, ver *version.Version) string {
 func runSuite(t *testing.T, suiteID string, suite *loader.TestSuite, mapper meta.RESTMapper, ver *version.Version, known *divergences) {
 	t.Helper()
 
-	eval, err := evaluator.New()
+	k8sVersion := fmt.Sprintf("%d.%d", ver.Major(), ver.Minor())
+
+	eval, err := evaluator.NewForVersion(k8sVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +148,7 @@ func runSuite(t *testing.T, suiteID string, suite *loader.TestSuite, mapper meta
 	artifacts := artifactsDir(t, suiteID, ver)
 
 	for i, s := range shardCases(cases) {
-		h := &shardRun{suite: suite, shard: s, eval: eval}
+		h := &shardRun{suite: suite, shard: s, eval: eval, k8sVersion: k8sVersion}
 		h.run(t, filepath.Join(artifacts, fmt.Sprintf("shard-%d", i+1), filepath.Base(suite.Path)))
 	}
 
@@ -219,15 +223,15 @@ func (h *shardRun) query(ctx context.Context) {
 		}
 
 		c.compare()
-		h.checkRealism(c)
+		h.checkRealism(ctx, c)
 	}
 }
 
 // checkRealism notes when kat decides the fixture as written differently from
 // the server-equivalent inputs: the fixture then does not describe what a
 // real cluster would evaluate.
-func (h *shardRun) checkRealism(c *katCase) {
-	raw := h.evaluateRawFixture(c)
+func (h *shardRun) checkRealism(ctx context.Context, c *katCase) {
+	raw := h.evaluateRawFixture(ctx, c)
 	normalized := c.run.kat
 	normalized.Object = nil
 
@@ -241,10 +245,6 @@ func (h *shardRun) checkRealism(c *katCase) {
 // failures when known-divergences.yaml lists the case.
 func report(t *testing.T, c *katCase, entry *divergence) {
 	t.Helper()
-
-	if c.skip != "" {
-		t.Skipf("not comparable: %s", c.skip)
-	}
 
 	for _, n := range c.run.notes {
 		t.Log(n)

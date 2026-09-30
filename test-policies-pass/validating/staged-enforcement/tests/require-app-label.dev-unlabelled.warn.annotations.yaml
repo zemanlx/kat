@@ -1,0 +1,1 @@
+validation.policy.admission.k8s.io/validation_failure: '[{"message":"configmaps must have an app label","policy":"require-app-label","binding":"require-app-label-report","expressionIndex":0,"validationActions":["Warn","Audit"]}]'

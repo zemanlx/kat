@@ -31,33 +31,34 @@ func (h *shardRun) installPolicies(ctx context.Context) {
 
 	for _, p := range h.suite.MutatingPolicies {
 		_, err := api.MutatingAdmissionPolicies().Create(ctx, clean(p), create)
-		h.rejected(p.Name, "MutatingAdmissionPolicy", err)
+		h.rejected(p.Name, err)
 	}
 
 	for _, b := range h.suite.MutatingBindings {
 		_, err := api.MutatingAdmissionPolicyBindings().Create(ctx, clean(b), create)
-		h.rejected(b.Spec.PolicyName, "MutatingAdmissionPolicyBinding "+b.Name, err)
+		h.rejected(b.Spec.PolicyName, err)
 	}
 
 	for _, p := range h.suite.ValidatingPolicies {
 		_, err := api.ValidatingAdmissionPolicies().Create(ctx, clean(p), create)
-		h.rejected(p.Name, "ValidatingAdmissionPolicy", err)
+		h.rejected(p.Name, err)
 	}
 
 	for _, b := range h.suite.ValidatingBindings {
 		_, err := api.ValidatingAdmissionPolicyBindings().Create(ctx, clean(b), create)
-		h.rejected(b.Spec.PolicyName, "ValidatingAdmissionPolicyBinding "+b.Name, err)
+		h.rejected(b.Spec.PolicyName, err)
 	}
 }
 
-func (h *shardRun) rejected(policyName, what string, err error) {
+// rejected records the first error of a policy's creation on its cases.
+func (h *shardRun) rejected(policyName string, err error) {
 	if err == nil {
 		return
 	}
 
 	for _, c := range h.shard.cases {
 		if c.policyName == policyName && c.run.server.policyErr == "" {
-			c.run.server.policyErr = fmt.Sprintf("%s: %v", what, err)
+			c.run.server.policyErr = err.Error()
 		}
 	}
 }

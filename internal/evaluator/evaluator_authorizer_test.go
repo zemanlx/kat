@@ -103,7 +103,7 @@ func runMutatingTest(t *testing.T, policy *admissionregv1.MutatingAdmissionPolic
 
 	userInfo := MockUserInfo(username, groups)
 
-	result, err := evaluator.EvaluateMutating(policy, nil, request, object, nil, nil, nil, auth, userInfo)
+	result, err := evaluator.EvaluateMutating(validMAP(policy), nil, request, object, nil, nil, nil, auth, userInfo)
 	if err != nil {
 		t.Fatalf("EvaluateMutating() error = %v", err)
 	}
@@ -112,16 +112,19 @@ func runMutatingTest(t *testing.T, policy *admissionregv1.MutatingAdmissionPolic
 		t.Errorf("EvaluateMutating() Allowed = false, want true")
 	}
 
+	if !expectedMutated {
+		if result.PatchedObject != nil {
+			t.Errorf("EvaluateMutating() patched object = %v, want none", result.PatchedObject.Object)
+		}
+
+		return
+	}
+
 	if result.PatchedObject == nil {
 		t.Fatal("EvaluateMutating() should return patched object")
 	}
 
-	wantObject := expectedObject
-	if !expectedMutated {
-		wantObject = object
-	}
-
-	if diff := cmp.Diff(wantObject.Object, result.PatchedObject.Object); diff != "" {
+	if diff := cmp.Diff(expectedObject.Object, result.PatchedObject.Object); diff != "" {
 		t.Errorf("Patched object mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -361,7 +364,7 @@ func runValidatingTest(t *testing.T, policy *admissionregv1.ValidatingAdmissionP
 
 	userInfo := MockUserInfo(username, groups)
 
-	result, err := evaluator.EvaluateValidating(policy, nil, request, object, nil, nil, nil, auth, userInfo)
+	result, err := evaluator.EvaluateValidating(validVAP(policy), nil, request, object, nil, nil, nil, auth, userInfo)
 	if err != nil {
 		t.Fatalf("EvaluateValidating() error = %v", err)
 	}

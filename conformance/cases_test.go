@@ -3,6 +3,7 @@ package conformance
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -33,16 +34,9 @@ type katCase struct {
 	name    string
 	tc      *loader.TestCase
 
-	mutatingPolicy    *admissionregv1.MutatingAdmissionPolicy
-	mutatingBinding   *admissionregv1.MutatingAdmissionPolicyBinding
-	validatingPolicy  *admissionregv1.ValidatingAdmissionPolicy
-	validatingBinding *admissionregv1.ValidatingAdmissionPolicyBinding
-	policyName        string
-	bindingName       string
-
-	// skip is set when the fixture cannot be turned into a request at all,
-	// for example when it does not load.
-	skip string
+	policies     evaluator.Policies
+	policyName   string
+	bindingNames []string
 
 	op          admissionv1.Operation
 	gvk         schema.GroupVersionKind
@@ -68,24 +62,41 @@ type katCase struct {
 // id is the case's name in known-divergences.yaml and in test output.
 func (c *katCase) id() string { return c.suiteID + "/" + c.name }
 
-// policy returns the policy under test's paramKind and failure policy.
+// paramKind returns the policy under test's paramKind.
 func (c *katCase) paramKind() *admissionregv1.ParamKind {
-	if c.mutatingPolicy != nil {
-		return c.mutatingPolicy.Spec.ParamKind
+	if c.policies.Mutating != nil {
+		return c.policies.Mutating.Spec.ParamKind
 	}
 
-	return c.validatingPolicy.Spec.ParamKind
+	return c.policies.Validating.Spec.ParamKind
 }
 
-func (c *katCase) paramRef() *admissionregv1.ParamRef {
-	switch {
-	case c.mutatingBinding != nil:
-		return c.mutatingBinding.Spec.ParamRef
-	case c.validatingBinding != nil:
-		return c.validatingBinding.Spec.ParamRef
-	default:
-		return nil
+// paramRef returns the paramRef of the policy's bindings. A case has at most
+// one params object, so the bindings that reference params must agree.
+func (c *katCase) paramRef() (*admissionregv1.ParamRef, error) {
+	refs := make([]*admissionregv1.ParamRef, 0, len(c.policies.MutatingBindings)+len(c.policies.ValidatingBindings))
+
+	for _, b := range c.policies.MutatingBindings {
+		refs = append(refs, b.Spec.ParamRef)
 	}
+
+	for _, b := range c.policies.ValidatingBindings {
+		refs = append(refs, b.Spec.ParamRef)
+	}
+
+	var paramRef *admissionregv1.ParamRef
+
+	for _, ref := range refs {
+		switch {
+		case ref == nil:
+		case paramRef == nil:
+			paramRef = ref
+		case !reflect.DeepEqual(ref, paramRef):
+			return nil, fmt.Errorf("%w: the policy's bindings reference different params", errUnsupportedCase)
+		}
+	}
+
+	return paramRef, nil
 }
 
 // newCases resolves every test case of a suite against the server's API.
@@ -94,12 +105,11 @@ func newCases(suiteID string, suite *loader.TestSuite, mapper meta.RESTMapper) [
 
 	for _, tc := range suite.Tests {
 		c := &katCase{suiteID: suiteID, name: strings.TrimSuffix(tc.Name, ".yaml"), tc: tc}
-		c.mutatingPolicy, c.mutatingBinding, c.validatingPolicy, c.validatingBinding = suite.FindPolicies(tc.PolicyName)
+		c.policies = suite.FindPolicies(tc.PolicyName)
 
 		switch {
 		case tc.Error != nil:
-			// kat itself reports the fixture as broken; there is no request to compare.
-			c.skip = "fixture does not load: " + tc.Error.Error()
+			c.inconclusivef("fixture does not load: %v", tc.Error)
 		default:
 			if err := c.resolve(mapper); err != nil {
 				c.inconclusivef("%v", err)
@@ -116,21 +126,21 @@ func newCases(suiteID string, suite *loader.TestSuite, mapper meta.RESTMapper) [
 
 func (c *katCase) resolve(mapper meta.RESTMapper) error {
 	switch {
-	case c.mutatingPolicy != nil:
-		c.policyName = c.mutatingPolicy.Name
-		if c.mutatingBinding != nil {
-			c.bindingName = c.mutatingBinding.Name
+	case c.policies.Mutating != nil:
+		c.policyName = c.policies.Mutating.Name
+		for _, b := range c.policies.MutatingBindings {
+			c.bindingNames = append(c.bindingNames, b.Name)
 		}
-	case c.validatingPolicy != nil:
-		c.policyName = c.validatingPolicy.Name
-		if c.validatingBinding != nil {
-			c.bindingName = c.validatingBinding.Name
+	case c.policies.Validating != nil:
+		c.policyName = c.policies.Validating.Name
+		for _, b := range c.policies.ValidatingBindings {
+			c.bindingNames = append(c.bindingNames, b.Name)
 		}
 	default:
 		return fmt.Errorf("%w: policy %q not found", errUnsupportedCase, c.tc.PolicyName)
 	}
 
-	if c.bindingName == "" {
+	if len(c.bindingNames) == 0 {
 		return fmt.Errorf("%w: policy %q has no binding, so the API server never evaluates it", errUnsupportedCase, c.policyName)
 	}
 

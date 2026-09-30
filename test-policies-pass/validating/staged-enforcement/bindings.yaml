@@ -1,0 +1,26 @@
+# One policy, two bindings: enforced in production, only reported elsewhere.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-app-label-enforce
+spec:
+  policyName: require-app-label
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        environment: prod
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-app-label-report
+spec:
+  policyName: require-app-label
+  validationActions: [Warn, Audit]
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: environment
+          operator: NotIn
+          values: ["prod"]

@@ -328,7 +328,9 @@ func TestEvaluateMutating_WithParams(t *testing.T) {
 				Operation: admissionv1.Create,
 			}
 
-			result, err := evaluator.EvaluateMutating(tc.policy, nil, request, tc.object, nil, tc.params, nil, nil, nil)
+			policy, binding := withParamsMAP(tc.policy)
+
+			result, err := evaluator.EvaluateMutating(policy, binding, request, tc.object, nil, tc.params, nil, nil, nil)
 			if err != nil {
 				t.Fatalf("EvaluateMutating() error = %v", err)
 			}
@@ -681,7 +683,9 @@ func TestEvaluateValidating_WithParams(t *testing.T) {
 				Operation: admissionv1.Create,
 			}
 
-			result, err := evaluator.EvaluateValidating(tc.policy, nil, request, tc.object, nil, tc.params, nil, nil, nil)
+			policy, binding := withParamsVAP(tc.policy)
+
+			result, err := evaluator.EvaluateValidating(policy, binding, request, tc.object, nil, tc.params, nil, nil, nil)
 			if err != nil {
 				t.Fatalf("EvaluateValidating() error = %v", err)
 			}
@@ -716,10 +720,9 @@ func TestEvaluate_MissingParams(t *testing.T) {
 		wantAllowed   bool
 		wantMessage   string
 	}{
-		{name: "deny", action: &deny, wantAllowed: false, wantMessage: missingParamsMessage},
+		{name: "deny", action: &deny, wantAllowed: false, wantMessage: "failed to configure binding: no params found for policy binding with `Deny` parameterNotFoundAction"},
 		{name: "deny with failurePolicy Ignore", action: &deny, failurePolicy: &ignore, wantAllowed: true},
 		{name: "allow skips the binding", action: &allow, wantAllowed: true},
-		{name: "unset skips the binding", wantAllowed: true},
 	}
 
 	object := &unstructured.Unstructured{Object: map[string]any{
@@ -742,12 +745,13 @@ func TestEvaluate_MissingParams(t *testing.T) {
 			paramRef := &admissionregv1.ParamRef{Name: "config", ParameterNotFoundAction: tt.action}
 
 			validating, err := e.EvaluateValidating(
-				&admissionregv1.ValidatingAdmissionPolicy{Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+				validVAP(&admissionregv1.ValidatingAdmissionPolicy{Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					ParamKind:     paramKind,
 					FailurePolicy: tt.failurePolicy,
 					Validations:   []admissionregv1.Validation{{Expression: "false", Message: "evaluated"}},
-				}},
-				&admissionregv1.ValidatingAdmissionPolicyBinding{Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+				}}),
+				&admissionregv1.ValidatingAdmissionPolicyBinding{Name: "test-binding", Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+					PolicyName:        "test-policy",
 					ParamRef:          paramRef,
 					ValidationActions: []admissionregv1.ValidationAction{admissionregv1.Deny},
 				}},
@@ -763,16 +767,17 @@ func TestEvaluate_MissingParams(t *testing.T) {
 			}
 
 			mutating, err := e.EvaluateMutating(
-				&admissionregv1.MutatingAdmissionPolicy{Spec: admissionregv1.MutatingAdmissionPolicySpec{
+				validMAP(&admissionregv1.MutatingAdmissionPolicy{Spec: admissionregv1.MutatingAdmissionPolicySpec{
 					ParamKind:     paramKind,
 					FailurePolicy: tt.failurePolicy,
 					Mutations: []admissionregv1.Mutation{{
 						PatchType: admissionregv1.PatchTypeJSONPatch,
 						JSONPatch: &admissionregv1.JSONPatch{Expression: `[JSONPatch{op: "add", path: "/metadata/labels", value: {}}]`},
 					}},
-				}},
-				&admissionregv1.MutatingAdmissionPolicyBinding{Spec: admissionregv1.MutatingAdmissionPolicyBindingSpec{
-					ParamRef: paramRef,
+				}}),
+				&admissionregv1.MutatingAdmissionPolicyBinding{Name: "test-binding", Spec: admissionregv1.MutatingAdmissionPolicyBindingSpec{
+					PolicyName: "test-policy",
+					ParamRef:   paramRef,
 				}},
 				request, object, nil, nil, nil, nil, nil,
 			)

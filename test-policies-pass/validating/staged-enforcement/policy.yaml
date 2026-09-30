@@ -1,0 +1,15 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: require-app-label
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["configmaps"]
+  validations:
+    - expression: "has(object.metadata.labels) && 'app' in object.metadata.labels"
+      message: "configmaps must have an app label"

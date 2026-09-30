@@ -94,26 +94,26 @@ type testRequest struct {
 	Authorizer             []evaluator.AuthorizationMockConfig
 }
 
-// FindPolicies returns the policy named policyName and its binding. A mutating
-// policy takes precedence over a validating policy of the same name.
-func (s *TestSuite) FindPolicies(policyName string) (
-	*admissionregv1.MutatingAdmissionPolicy,
-	*admissionregv1.MutatingAdmissionPolicyBinding,
-	*admissionregv1.ValidatingAdmissionPolicy,
-	*admissionregv1.ValidatingAdmissionPolicyBinding,
-) {
+// FindPolicies returns the policy named policyName with all of its bindings.
+// A mutating policy takes precedence over a validating policy of the same
+// name. Neither policy is set when there is no such policy.
+func (s *TestSuite) FindPolicies(policyName string) evaluator.Policies {
+	var p evaluator.Policies
+
 	for _, policy := range s.MutatingPolicies {
 		if policy.Name != policyName {
 			continue
 		}
 
+		p.Mutating = policy
+
 		for _, binding := range s.MutatingBindings {
 			if binding.Spec.PolicyName == policy.Name {
-				return policy, binding, nil, nil
+				p.MutatingBindings = append(p.MutatingBindings, binding)
 			}
 		}
 
-		return policy, nil, nil, nil
+		return p
 	}
 
 	for _, policy := range s.ValidatingPolicies {
@@ -121,16 +121,18 @@ func (s *TestSuite) FindPolicies(policyName string) (
 			continue
 		}
 
+		p.Validating = policy
+
 		for _, binding := range s.ValidatingBindings {
 			if binding.Spec.PolicyName == policy.Name {
-				return nil, nil, policy, binding
+				p.ValidatingBindings = append(p.ValidatingBindings, binding)
 			}
 		}
 
-		return nil, nil, policy, nil
+		return p
 	}
 
-	return nil, nil, nil, nil
+	return p
 }
 
 // Load discovers and loads all test suites from the given path.
@@ -614,7 +616,7 @@ func mergeSimpleFields(testReq, tempReq *testRequest) {
 		testReq.ExpectMessage = tempReq.ExpectMessage
 	}
 
-	if len(tempReq.ExpectWarnings) > 0 {
+	if tempReq.ExpectWarnings != nil {
 		testReq.ExpectWarnings = tempReq.ExpectWarnings
 	}
 

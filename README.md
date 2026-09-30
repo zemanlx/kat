@@ -188,6 +188,9 @@ kat -run "my-policy.basic-test" ./policies/my-policy
 - `-run <regex>`: Run only tests matching the regex pattern.
 - `-v`: Verbose output (shows detailed execution steps).
 - `-json`: Emit newline-delimited JSON events, compatible with `go test -json` (works with tooling like `gotestsum`).
+- `-k8s-version <major.minor>`: Behave like this Kubernetes version's API server (default: the latest
+  supported, currently `1.37`; `1.36` is the oldest). It selects the CEL libraries and validation rules
+  available to policies, so set it to your cluster's version.
 
 ```bash
 kat -v -run "prod-.*-deny" .
@@ -305,6 +308,7 @@ Available fields in `.request.yaml`:
 | `resource` | Request resource `{group, version, resource}`, derived from the object's kind. Set it for CONNECT (`{version: v1, resource: pods}` + `subResource: exec`) or a CRD with an irregular plural |
 | `subResource` | Sub-resource being accessed (e.g., `status`) |
 | `options` | Additional options for the request |
+| `dryRun` | `request.dryRun` seen by the policy (default `false`) |
 
 #### Split Files
 
@@ -344,6 +348,15 @@ Deprecated API version, migrate to apps/v1
 # my-policy.flagged.audit.annotations.yaml
 audit-annotation-key: "violation detected"
 ```
+
+A failed validation under a binding with the `Audit` action is recorded, as by the API
+server, in the `validation.policy.admission.k8s.io/validation_failure` annotation:
+```yaml
+validation.policy.admission.k8s.io/validation_failure: '[{"message":"configmaps must have an app label","policy":"require-app-label","binding":"require-app-label-report","expressionIndex":0,"validationActions":["Warn","Audit"]}]'
+```
+
+An empty `.warnings.txt` asserts the request gets **no** warnings, and an `.annotations.yaml`
+containing `{}` asserts it gets no audit annotations.
 
 ### Mutating Policies
 
@@ -418,8 +431,17 @@ Authoring a test is a short loop:
   the request before any expression runs, and `Allow` skips the policy.
 - CEL list and map literals must be homogeneous, as in the API server. Build
   mixed-type values with typed literals such as `Object.spec.containers{name: "a", ports: [...]}`.
-- `kat` does not validate policies the way the API server does on creation, for
-  example that a MutatingAdmissionPolicy sets `reinvocationPolicy`.
+- Policies and bindings are defaulted and validated as the API server does when they
+  are created: a MutatingAdmissionPolicy without `reinvocationPolicy`, an unknown
+  `reason`, or a CEL expression that doesn't compile fails every test of the policy with
+  "the API server would reject the policy: …" and the server's error.
+- The CEL environment is the API server's for the selected `-k8s-version`. Libraries the
+  server doesn't offer (such as `math.` and `base64.` from cel-go) are not available.
+- A policy with `reinvocationPolicy: IfNeeded` that changes the object is run once more,
+  as the API server does, so a non-idempotent mutation is applied twice.
+- Several bindings of one policy are all evaluated; the first denial wins.
+- Objects are not defaulted after mutation (for example a Pod's `imagePullPolicy`), so a
+  `.gold.yaml` contains only what the policy itself set.
 
 ## Conformance with the API server
 

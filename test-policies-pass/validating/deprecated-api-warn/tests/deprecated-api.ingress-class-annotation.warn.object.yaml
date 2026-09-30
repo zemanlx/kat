@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: legacy-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  defaultBackend:
+    service:
+      name: web
+      port:
+        number: 80

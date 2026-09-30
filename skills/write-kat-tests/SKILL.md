@@ -91,9 +91,12 @@ Setting `operation:` to something that conflicts with the inferred value is an e
   policy message (whitespace trimmed). Always add it to catch "denied for the
   wrong reason".
 - **warn** — admitted with warnings; `.warnings.txt` matches warnings by index,
-  one per line, exact text.
+  one per line, exact text. An empty `.warnings.txt` asserts **no** warnings.
 - **audit** — admitted; `.annotations.yaml` (key→value map) matches the listed
-  keys exactly (extra actual annotations are ignored).
+  keys exactly (extra actual annotations are ignored); `{}` asserts none. A
+  failed validation under an `Audit` binding also sets
+  `validation.policy.admission.k8s.io/validation_failure` (JSON list of
+  `message`, `policy`, `binding`, `expressionIndex`, `validationActions`).
 - **mutation** — a mutating policy that changes the object **requires** a
   `.gold.yaml` with the full expected object, or the case fails.
 
@@ -135,3 +138,10 @@ Rename each to `<policy-name>.<test-name>.<expect>.<type>.yaml` before use. The
 - Mutating policy without a `.gold.yaml`.
 - Same field defined in both `.request.yaml` and a split file → conflict error.
 - Using `v1beta1` policies — only `admissionregistration.k8s.io/v1` is supported.
+- A policy the API server would reject on creation (e.g. a MutatingAdmissionPolicy
+  without `reinvocationPolicy`, a CEL expression that doesn't compile) fails every
+  case with "the API server would reject the policy: …". Fix the policy, not the test.
+- CEL libraries the API server doesn't offer (e.g. `math.`, `base64.`) don't compile.
+  Pass `-k8s-version <major.minor>` (default latest, min `1.36`) to match the cluster.
+- `reinvocationPolicy: IfNeeded` reruns a policy that changed the object, so a
+  non-idempotent mutation (append, counter) is applied twice in `.gold.yaml`.

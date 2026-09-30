@@ -35,19 +35,24 @@ FAIL	block-team-ci-service-accounts	0.000s
 
 --- FAIL: conditional-policy/conditional.dev-single-replica.allow.yaml (0.00s)
     expected allowed=true, got allowed=false
---- FAIL: conditional-policy/conditional.object-conflict.allow.yaml (0.00s)
-    test loading error: conflict: object defined in multiple files
 --- FAIL: conditional-policy/conditional.prod-ha.deny.yaml (0.00s)
-    test loading error: failed to parse test file test-policies-fail/conditional-policy/tests/conditional.prod-ha.deny.object.yaml: object: invalid kubernetes object: strict decoding error: unknown field "spec.template.spec.container"
+    message does not match expected:
+    --- Expected
+    +++ Actual
+    @@ -1 +1 @@
+    -Production deployments must have at least 3 replicas
+    +expression 'has(namespaceObject.metadata.labels) && 'environment' in namespaceObject.metadata.labels && namespaceObject.metadata.labels.environment == 'prod'' resulted in error: no such key: metadata
+--- FAIL: conditional-policy/conditional.scale-down.allow.yaml (0.00s)
+    expected allowed=true, got allowed=false
 FAIL	conditional-policy	0.000s
 
---- FAIL: deprecated-api-warn/deprecated-api.old-version.warn.yaml (0.00s)
+--- FAIL: deprecated-api-warn/deprecated-api.ingress-class-annotation.warn.yaml (0.00s)
     warning[0] does not match expected:
     --- Expected
     +++ Actual
     @@ -1 +1 @@
-    -Using deprecated API version apps/v1beta1. Please migrate to apps/v1.
-    +Using deprecated API version apps/v1beta1. Please migrate to apps/v1
+    -The kubernetes.io/ingress.class annotation is deprecated. Set spec.ingressClassName: nginx instead.
+    +The kubernetes.io/ingress.class annotation is deprecated. Set spec.ingressClassName: nginx instead
 FAIL	deprecated-api-warn	0.000s
 
 --- FAIL: mutating-with-binding/add-label.allowed.yaml (0.00s)
@@ -94,5 +99,7 @@ FAIL	prevent-owner-change	0.000s
 FAIL	track-privileged-audit	0.000s
 
 --- FAIL: variables-forward-reference/variables-forward-reference.forward.allow.yaml (0.00s)
-    evaluation error: variable "first": compile expression "variables.second + 1": reference to an undeclared variable: undefined field 'second'
+    the API server would reject the policy: ValidatingAdmissionPolicy.admissionregistration.k8s.io "variables-forward-reference" is invalid: spec.variables[0].expression: Invalid value: "variables.second + 1": compilation failed: ERROR: <input>:1:10: undefined field 'second'
+     | variables.second + 1
+     | .........^
 FAIL	variables-forward-reference	0.000s

@@ -6,12 +6,11 @@ spec:
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
-    - apiGroups: ["apps"]
-      apiVersions: ["v1beta1", "v1beta2"]
+    - apiGroups: ["networking.k8s.io"]
+      apiVersions: ["v1"]
       operations: ["CREATE", "UPDATE"]
-      resources: ["deployments"]
+      resources: ["ingresses"]
   validations:
-  - expression: "false"
-    messageExpression: "'Using deprecated API version ' + object.apiVersion + '. Please migrate to apps/v1'"
+  - expression: "!has(object.metadata.annotations) || !('kubernetes.io/ingress.class' in object.metadata.annotations)"
+    messageExpression: "'The kubernetes.io/ingress.class annotation is deprecated. Set spec.ingressClassName: ' + object.metadata.annotations['kubernetes.io/ingress.class'] + ' instead'"
     reason: Invalid
-

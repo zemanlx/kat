@@ -13,6 +13,6 @@ spec:
       labels:
         app: test
     spec:
-      container: # this should be containers
+      containers:
         - name: nginx
           image: nginx

@@ -38,6 +38,7 @@ go build -o kat . && ./kat ./test-policies-pass/validating/require-owner-label
 ./kat -v <dir>                           # verbose
 ./kat -json <dir>                        # newline-delimited go-test-json events
 ./kat -run "<regex>" <dir>               # filter test cases by name
+./kat -k8s-version 1.36 <dir>            # behave like a 1.36 API server (default: latest)
 ```
 
 - **`kat` takes directory paths, not single files** (`loader.Load` uses `os.ReadDir`).
@@ -54,6 +55,13 @@ go build -o kat . && ./kat ./test-policies-pass/validating/require-owner-label
    Binding files: `binding.yaml`/`bindings.yaml`/`*.binding.yaml` (+ `.yml`).
    Multiple resources may share one file, separated by `---`.
 - Only `v1` policies are supported; `v1beta1` documents are a hard error.
+- Policies and bindings are defaulted and validated as on creation
+  (`internal/evaluator/validation.go`, a port of the API server's). A policy the
+  server would reject fails all its cases with "the API server would reject the
+  policy: …". The CEL environment is the server's for `-k8s-version`
+  (`k8s.io/apiserver/pkg/cel/environment`), and admission reuses the apiserver's
+  CEL compiler, match conditions and patchers (`internal/evaluator/validating.go`,
+  `mutating.go`); do not add `k8s.io/kubernetes`.
 
 ## Test file conventions (the API is the filename)
 
@@ -118,24 +126,27 @@ GOTESTFLAGS="-v -run TestConformance/test-policies-pass/mutating" ./hack/conform
      inputs the server's CEL sees (server-defaulted object, stored `oldObject`,
      the server's `namespaceObject` and params, the impersonated identity,
      `request.dryRun`), must equal the server's decision, message, policy warnings,
-     audit annotations and mutated object.
+     status reason, denying binding, audit annotations (including
+     `validation.policy.admission.k8s.io/validation_failure`) and mutated object.
+     A policy or binding the server rejects on creation must be rejected by kat
+     with the same error message. kat runs with `-k8s-version` set to the
+     server's minor, in both layers.
   2. `.../<case>/binary`: the built kat binary must pass a suite generated from the
      server's results (inputs in `.request.yaml`, expectations in
      `.message.txt`/`.warnings.txt`/`.annotations.yaml`/`.gold.yaml`). Generated
      suites are kept in `conformance/.artifacts/<server version>/` (uploaded by CI on
      failure); reproduce with `./kat <dir>`.
 - A server-side error that is not an admission decision (for example, the fixture
-  object is invalid) makes the case fail as `inconclusive`. A fixture that kat
-  itself cannot load is skipped. When kat decides the fixture as written
+  object is invalid), or a fixture that kat cannot load, makes the case fail as
+  `inconclusive`. When kat decides the fixture as written
   differently than on the server-equivalent inputs, the case logs a note: the
   fixture does not describe what a real cluster would evaluate.
 - Cases are packed into shards so that no two cases in a shard need conflicting
   server state (an object present vs absent, different namespace labels or params).
   Each shard gets its own apiserver; suites run in parallel.
-- Layer-2 gaps, covered by layer 1: kat cannot assert "no warnings" or "no extra
-  annotations", `.request.yaml` has no `dryRun`, and a CONNECT `.request.yaml`
-  cannot carry the `PodExecOptions` object. Inputs omit `managedFields`, and
-  `validation.policy.admission.k8s.io/validation_failure` is not compared.
+- Layer-2 gaps, covered by layer 1: `.annotations.yaml` ignores extra keys when it
+  lists some, a CONNECT `.request.yaml` cannot carry the `PodExecOptions` object,
+  and inputs omit `managedFields`.
 
 **Known divergences.** When kat and the server differ and the fix is not a small kat
 change, add an entry to `conformance/known-divergences.yaml` with `suite`, optional
@@ -155,7 +166,8 @@ fails fast on an older server. When a minor is released or dropped, update both
 - Match existing code and comment style; keep changes minimal and scoped.
 - Assertions are exact-match: deny `.message.txt` equals the message (whitespace
   trimmed); `.warnings.txt` matches warnings by index; `.annotations.yaml` matches
-  the listed keys exactly (extra actual keys ignored).
+  the listed keys exactly (extra actual keys ignored). An empty `.warnings.txt` or
+  an `.annotations.yaml` of `{}` asserts there are none.
 - A mutating policy that mutates the object **requires** a `.gold.yaml`, or the case
   fails with "policy mutated the object but no .gold.yaml file was provided".
 - Defining the same field in both `.request.yaml` and a split file is an error.

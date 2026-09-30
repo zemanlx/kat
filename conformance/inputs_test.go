@@ -188,7 +188,7 @@ func (h *shardRun) evaluateKat(ctx context.Context, c *katCase) {
 		Authorizer:   c.tc.Authorizer,
 	}
 
-	run.katResult, run.katErr = h.eval.Evaluate(c.mutatingPolicy, c.mutatingBinding, c.validatingPolicy, c.validatingBinding, tc)
+	run.katResult, run.katErr = h.eval.Evaluate(ctx, c.policies, tc)
 	if run.katErr != nil || run.katResult == nil || !run.katResult.Allowed {
 		return
 	}
@@ -229,8 +229,8 @@ func (h *shardRun) defaultKatOutput(ctx context.Context, c *katCase, patched *un
 
 // evaluateRawFixture runs kat on the fixture as written, the way the kat
 // binary does, for the informational realism check.
-func (h *shardRun) evaluateRawFixture(c *katCase) outcome {
-	res, err := h.eval.Evaluate(c.mutatingPolicy, c.mutatingBinding, c.validatingPolicy, c.validatingBinding, c.tc)
+func (h *shardRun) evaluateRawFixture(ctx context.Context, c *katCase) outcome {
+	res, err := h.eval.Evaluate(ctx, c.policies, c.tc)
 
 	return katOutcome(res, err, nil, "")
 }

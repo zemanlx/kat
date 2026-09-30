@@ -17,11 +17,12 @@ const defaultVersion = "(devel)"
 var version = defaultVersion
 
 type config struct {
-	runPattern string
-	verbose    bool
-	jsonOutput bool
-	version    bool
-	testPaths  []string
+	runPattern        string
+	verbose           bool
+	jsonOutput        bool
+	version           bool
+	kubernetesVersion string
+	testPaths         []string
 }
 
 func main() {
@@ -32,7 +33,7 @@ func main() {
 }
 
 // run is testable: inject args/getenv/stdin/stdout.
-func run(_ context.Context, args []string, _ func(string) string, _ *os.File, stdout *os.File) error {
+func run(ctx context.Context, args []string, _ func(string) string, _ *os.File, stdout *os.File) error {
 	cfg, err := parseFlags(args, stdout)
 	if err != nil {
 		return err
@@ -49,7 +50,7 @@ func run(_ context.Context, args []string, _ func(string) string, _ *os.File, st
 		return err
 	}
 
-	return executeTests(suites, cfg, stdout)
+	return executeTests(ctx, suites, cfg, stdout)
 }
 
 func parseFlags(args []string, stdout *os.File) (*config, error) {
@@ -60,6 +61,8 @@ func parseFlags(args []string, stdout *os.File) (*config, error) {
 	verbose := fs.Bool("v", false, "verbose output")
 	jsonOutput := fs.Bool("json", false, "output test results in JSON format")
 	showVersion := fs.Bool("version", false, "print version and exit")
+	kubernetesVersion := fs.String("k8s-version", evaluator.DefaultKubernetesVersion,
+		"evaluate policies like the kube-apiserver of this major.minor version")
 
 	if err := fs.Parse(args[1:]); err != nil {
 		return nil, fmt.Errorf("parse flags: %w", err)
@@ -71,11 +74,12 @@ func parseFlags(args []string, stdout *os.File) (*config, error) {
 	}
 
 	return &config{
-		runPattern: *runPattern,
-		verbose:    *verbose,
-		jsonOutput: *jsonOutput,
-		version:    *showVersion,
-		testPaths:  testPaths,
+		runPattern:        *runPattern,
+		verbose:           *verbose,
+		jsonOutput:        *jsonOutput,
+		version:           *showVersion,
+		kubernetesVersion: *kubernetesVersion,
+		testPaths:         testPaths,
 	}, nil
 }
 
@@ -94,8 +98,8 @@ func loadSuites(paths []string, pattern string) ([]*loader.TestSuite, error) {
 	return suites, nil
 }
 
-func executeTests(suites []*loader.TestSuite, cfg *config, stdout *os.File) error {
-	eval, err := evaluator.New()
+func executeTests(ctx context.Context, suites []*loader.TestSuite, cfg *config, stdout *os.File) error {
+	eval, err := evaluator.NewForVersion(cfg.kubernetesVersion)
 	if err != nil {
 		return fmt.Errorf("create evaluator: %w", err)
 	}
@@ -104,7 +108,7 @@ func executeTests(suites []*loader.TestSuite, cfg *config, stdout *os.File) erro
 	configureReporter(rep, cfg)
 
 	for _, suite := range suites {
-		if err := runSuite(eval, rep, suite); err != nil {
+		if err := runSuite(ctx, eval, rep, suite); err != nil {
 			return err
 		}
 	}
@@ -127,24 +131,21 @@ func configureReporter(rep *reporter.Reporter, cfg *config) {
 	}
 }
 
-func runSuite(eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.TestSuite) error {
+func runSuite(ctx context.Context, eval *evaluator.Evaluator, rep *reporter.Reporter, suite *loader.TestSuite) error {
 	suiteRep := rep.StartSuite(suite.Name)
 	defer suiteRep.End()
 
 	for _, test := range suite.Tests {
 		suiteRep.StartTest(test.Name)
 
-		mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding := suite.FindPolicies(test.PolicyName)
-
-		if mutatingPolicy == nil && validatingPolicy == nil {
+		policies := suite.FindPolicies(test.PolicyName)
+		if policies.Mutating == nil && policies.Validating == nil {
 			suiteRep.ReportFail(test.Name, fmt.Sprintf("policy %q not found", test.PolicyName))
 
 			continue
 		}
 
-		// Evaluate test
-		result := eval.EvaluateTest(mutatingPolicy, mutatingBinding, validatingPolicy, validatingBinding, test)
-
+		result := eval.EvaluateTest(ctx, policies, test)
 		suiteRep.ReportResult(test.Name, result)
 	}
 

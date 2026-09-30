@@ -1,5 +1,5 @@
-// Package ssa applies ApplyConfiguration mutations to Kubernetes objects using
-// the same server-side-apply (structured-merge-diff) logic as the API server.
+// Package ssa provides the type converter with which ApplyConfiguration
+// mutations are merged the way the API server merges them.
 //
 // Merge behaviour is driven by the OpenAPI schema embedded in this package, so
 // lists declared as listType=map (containers, env, ports, volumes, ...) are
@@ -12,20 +12,15 @@ package ssa
 import (
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/managedfields"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 	"sigs.k8s.io/structured-merge-diff/v6/typed"
 )
-
-// errUnexpectedMergedType is returned when the merged runtime.Object is not the
-// expected *unstructured.Unstructured.
-var errUnexpectedMergedType = errors.New("merged object has unexpected type")
 
 // builtinSwagger is the Kubernetes OpenAPI v2 schema for built-in types, used to
 // resolve list merge keys. It is version-locked to the k8s.io/* dependencies
@@ -70,56 +65,30 @@ func buildBuiltinConverter() (managedfields.TypeConverter, error) {
 	return converter, nil
 }
 
-// Merge applies patch onto live using server-side-apply semantics and returns
-// the merged object. The patch inherits live's GroupVersionKind, since
-// ApplyConfiguration expressions typically omit apiVersion/kind.
-func Merge(live, patch *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	preparedPatch := patch.DeepCopy()
-	preparedPatch.SetGroupVersionKind(live.GroupVersionKind())
-
+// TypeConverter returns the type converter the API server would use for an
+// object: the built-in schema for built-in kinds, and a schemaless one, in
+// which every list is atomic, for any other kind.
+func TypeConverter() (managedfields.TypeConverter, error) {
 	converter, err := builtinConverter()
 	if err != nil {
 		return nil, err
 	}
 
-	merged, err := apply(converter, live, preparedPatch)
-	if err != nil && strings.Contains(err.Error(), errNoSchema) {
-		// Unknown kind (e.g. a CRD): merge without a schema, treating lists as atomic.
-		return apply(deducedTC, live, preparedPatch)
-	}
-
-	return merged, err
+	return fallbackConverter{converter}, nil
 }
 
-// apply performs the structured-merge-diff merge with the given type converter.
-func apply(
-	converter managedfields.TypeConverter,
-	live, patch *unstructured.Unstructured,
-) (*unstructured.Unstructured, error) {
-	liveTyped, err := converter.ObjectToTyped(live, typed.AllowDuplicates)
-	if err != nil {
-		return nil, fmt.Errorf("convert object to typed: %w", err)
+// fallbackConverter converts objects of kinds missing from the built-in
+// schema with the schemaless converter.
+type fallbackConverter struct {
+	managedfields.TypeConverter
+}
+
+func (c fallbackConverter) ObjectToTyped(obj runtime.Object, opts ...typed.ValidationOptions) (*typed.TypedValue, error) {
+	// Errors pass through unwrapped: the server's patcher reports them as is.
+	tv, err := c.TypeConverter.ObjectToTyped(obj, opts...)
+	if err != nil && strings.Contains(err.Error(), errNoSchema) {
+		return deducedTC.ObjectToTyped(obj, opts...) //nolint:wrapcheck // See above.
 	}
 
-	patchTyped, err := converter.ObjectToTyped(patch)
-	if err != nil {
-		return nil, fmt.Errorf("convert apply configuration to typed: %w", err)
-	}
-
-	mergedTyped, err := liveTyped.Merge(patchTyped)
-	if err != nil {
-		return nil, fmt.Errorf("merge apply configuration: %w", err)
-	}
-
-	merged, err := converter.TypedToObject(mergedTyped)
-	if err != nil {
-		return nil, fmt.Errorf("convert merged object from typed: %w", err)
-	}
-
-	result, ok := merged.(*unstructured.Unstructured)
-	if !ok {
-		return nil, fmt.Errorf("%w: %T", errUnexpectedMergedType, merged)
-	}
-
-	return result, nil
+	return tv, err //nolint:wrapcheck // See above.
 }

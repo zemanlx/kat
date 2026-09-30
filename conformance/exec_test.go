@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -21,6 +22,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+
+	"github.com/zemanlx/kat/internal/evaluator"
 )
 
 var (
@@ -41,10 +44,12 @@ const notSyncedMessage = "not yet synced to use for admission"
 
 // serverResult is the server's decision for one case.
 type serverResult struct {
-	// policyErr is set when the server rejected the policy or binding.
+	// policyErr is the server's error when it rejected the policy or binding.
 	policyErr   string
 	allowed     bool
 	message     string
+	binding     string
+	reason      metav1.StatusReason
 	warnings    []string
 	annotations map[string]string
 	object      *unstructured.Unstructured
@@ -53,9 +58,12 @@ type serverResult struct {
 func (r serverResult) outcome() outcome {
 	switch {
 	case r.policyErr != "":
-		return outcome{Result: resultError}
+		return outcome{Result: resultRejected, Message: r.policyErr}
 	case !r.allowed:
-		return outcome{Result: resultDenied, Message: r.message, Warnings: r.warnings, AuditAnnotations: r.annotations}
+		return outcome{
+			Result: resultDenied, Message: r.message, Binding: r.binding, Reason: r.reason,
+			Warnings: r.warnings, AuditAnnotations: r.annotations,
+		}
 	}
 
 	out := outcome{Result: resultAllowed, Warnings: r.warnings, AuditAnnotations: r.annotations}
@@ -188,10 +196,10 @@ func (h *shardRun) record(ctx context.Context, c *katCase, capt *capture, obj *u
 		m := denialPattern.FindStringSubmatch(status.Status().Message)
 
 		switch {
-		case m != nil && (m[1] != c.policyName || m[2] != c.bindingName):
+		case m != nil && (m[1] != c.policyName || !slices.Contains(c.bindingNames, m[2])):
 			return fmt.Errorf("denied by policy %q binding %q, not the policy under test: %w", m[1], m[2], reqErr)
 		case m != nil:
-			res.message = m[3]
+			res.message, res.binding, res.reason = m[3], m[2], status.Status().Reason
 		case c.op == admissionv1.Connect:
 			res.allowed = true
 
@@ -213,7 +221,7 @@ func (c *katCase) policyWarnings(warnings []string) []string {
 
 	for _, w := range warnings {
 		m := warningPattern.FindStringSubmatch(w)
-		if m == nil || m[1] != c.policyName || m[2] != c.bindingName {
+		if m == nil || m[1] != c.policyName || !slices.Contains(c.bindingNames, m[2]) {
 			c.notef("ignored server warning: %s", w)
 
 			continue
@@ -226,7 +234,8 @@ func (c *katCase) policyWarnings(warnings []string) []string {
 }
 
 // recordAudit reads the policy's audit annotations back from the audit log,
-// without the "<policy>/" key prefix, and checks the identity the server saw.
+// without the "<policy>/" key prefix, and its entries of the validation
+// failure annotation, and checks the identity the server saw.
 func (h *shardRun) recordAudit(ctx context.Context, c *katCase, capt *capture) error {
 	if len(capt.auditIDs) == 0 {
 		return errNoAuditEvent
@@ -240,13 +249,21 @@ func (h *shardRun) recordAudit(ctx context.Context, c *katCase, capt *capture) e
 	prefix := c.policyName + "/"
 
 	for k, v := range event.Annotations {
-		if key, ok := strings.CutPrefix(k, prefix); ok {
-			if c.run.server.annotations == nil {
-				c.run.server.annotations = map[string]string{}
-			}
-
-			c.run.server.annotations[key] = v
+		key, ok := strings.CutPrefix(k, prefix)
+		if k == evaluator.ValidationFailureAnnotation {
+			key = k
+			v, ok = c.policyValidationFailures(v)
 		}
+
+		if !ok {
+			continue
+		}
+
+		if c.run.server.annotations == nil {
+			c.run.server.annotations = map[string]string{}
+		}
+
+		c.run.server.annotations[key] = v
 	}
 
 	if seen := event.ImpersonatedUser; !sameIdentity(seen, c.user) {
@@ -254,6 +271,40 @@ func (h *shardRun) recordAudit(ctx context.Context, c *katCase, capt *capture) e
 	}
 
 	return nil
+}
+
+// validationFailure is an entry of the server's validation failure annotation.
+type validationFailure struct {
+	Message           string   `json:"message"`
+	Policy            string   `json:"policy"`
+	Binding           string   `json:"binding"`
+	ExpressionIndex   int      `json:"expressionIndex"`
+	ValidationActions []string `json:"validationActions"`
+}
+
+// policyValidationFailures keeps the annotation's entries of the policy under
+// test, encoded as the server encodes them. It reports false when none is left.
+func (c *katCase) policyValidationFailures(value string) (string, bool) {
+	var all, own []validationFailure
+	if err := json.Unmarshal([]byte(value), &all); err != nil {
+		c.notef("unreadable %s annotation %q: %v", evaluator.ValidationFailureAnnotation, value, err)
+
+		return "", false
+	}
+
+	for _, f := range all {
+		if f.Policy == c.policyName {
+			own = append(own, f)
+		}
+	}
+
+	if len(own) == 0 {
+		return "", false
+	}
+
+	data, err := json.Marshal(own)
+
+	return string(data), err == nil
 }
 
 func sameIdentity(seen *auditUser, want *user.DefaultInfo) bool {

@@ -198,8 +198,13 @@ func execPod(c *katCase) *unstructured.Unstructured {
 // paramsNeed seeds the fixture's params, or, when the binding references
 // params the fixture does not provide, requires them to be absent.
 func (c *katCase) paramsNeed(mapper meta.RESTMapper) (*need, error) {
-	paramKind, paramRef := c.paramKind(), c.paramRef()
+	paramKind := c.paramKind()
 	params := c.tc.Params
+
+	paramRef, err := c.paramRef()
+	if err != nil {
+		return nil, err
+	}
 
 	if params == nil && (paramKind == nil || paramRef == nil || paramRef.Name == "") {
 		return nil, nil //nolint:nilnil // No params involved.
@@ -216,6 +221,11 @@ func (c *katCase) paramsNeed(mapper meta.RESTMapper) (*need, error) {
 		return &need{key: objectKey{resource: mapping.Resource, namespace: namespace, name: paramRef.Name}}, nil
 	}
 
+	return c.seedParams(mapping, params, namespace), nil
+}
+
+// seedParams requires the fixture's params to exist, by default in namespace.
+func (c *katCase) seedParams(mapping *meta.RESTMapping, params *unstructured.Unstructured, namespace string) *need {
 	seeded := withoutServerFields(params)
 	if seeded.GetNamespace() == "" {
 		seeded.SetNamespace(namespace)
@@ -227,7 +237,7 @@ func (c *katCase) paramsNeed(mapper meta.RESTMapper) (*need, error) {
 
 	key := objectKey{resource: mapping.Resource, namespace: seeded.GetNamespace(), name: seeded.GetName()}
 
-	return &need{key: key, present: true, object: seeded}, nil
+	return &need{key: key, present: true, object: seeded}
 }
 
 // paramsNamespace is where the server looks params up: the paramRef's
@@ -333,7 +343,7 @@ func shardCases(cases []*katCase) []*shard {
 	var shards []*shard
 
 	for _, c := range cases {
-		if c.skip != "" || c.isInconclusive() {
+		if c.isInconclusive() {
 			continue
 		}
 

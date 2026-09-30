@@ -3,12 +3,15 @@ package ssa
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"runtime/debug"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	smdpatch "k8s.io/apiserver/pkg/admission/plugin/policy/mutating/patch"
 )
 
 // schemaVersion is the k8s.io module version the embedded schema was generated
@@ -154,7 +157,7 @@ func TestMerge(t *testing.T) {
 			want:  podMeta(map[string]any{"name": "p", "labels": map[string]any{"a": "1", "b": "2"}}),
 		},
 		{
-			name: "atomic list (command) is replaced wholesale",
+			name: "atomic list (command) may not be set",
 			live: pod(map[string]any{
 				"containers": []any{map[string]any{
 					"name": "app", "image": "app:1",
@@ -166,12 +169,7 @@ func TestMerge(t *testing.T) {
 					"name": "app", "command": []any{"new"},
 				}},
 			}),
-			want: pod(map[string]any{
-				"containers": []any{map[string]any{
-					"name": "app", "image": "app:1",
-					"command": []any{"new"},
-				}},
-			}),
+			wantErr: true,
 		},
 		{
 			name: "unknown kind falls back to schemaless merge",
@@ -193,10 +191,7 @@ func TestMerge(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := Merge(
-				&unstructured.Unstructured{Object: tt.live},
-				&unstructured.Unstructured{Object: tt.patch},
-			)
+			got, err := merge(tt.live, tt.patch)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("Merge() error = nil, want error")
@@ -209,11 +204,36 @@ func TestMerge(t *testing.T) {
 				t.Fatalf("Merge() error = %v, want nil", err)
 			}
 
-			if diff := cmp.Diff(normalize(t, tt.want), normalize(t, got.Object)); diff != "" {
+			if diff := cmp.Diff(normalize(t, tt.want), normalize(t, got)); diff != "" {
 				t.Errorf("Merge() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
+}
+
+// merge applies patch to live as the API server's ApplyConfiguration patcher
+// does, with the patch taking live's kind.
+func merge(live, patch map[string]any) (map[string]any, error) {
+	liveObj := &unstructured.Unstructured{Object: live}
+	patchObj := &unstructured.Unstructured{Object: patch}
+	patchObj.SetGroupVersionKind(liveObj.GroupVersionKind())
+
+	converter, err := TypeConverter()
+	if err != nil {
+		return nil, err
+	}
+
+	merged, err := smdpatch.ApplyStructuredMergeDiff(converter, liveObj, patchObj)
+	if err != nil {
+		return nil, fmt.Errorf("apply: %w", err)
+	}
+
+	out, err := runtime.DefaultUnstructuredConverter.ToUnstructured(merged)
+	if err != nil {
+		return nil, fmt.Errorf("convert: %w", err)
+	}
+
+	return out, nil
 }
 
 // pod builds a minimal Pod object with the given spec.

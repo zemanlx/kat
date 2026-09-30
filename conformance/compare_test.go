@@ -1,31 +1,36 @@
 package conformance
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	admissionv1 "k8s.io/api/admission/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/zemanlx/kat/internal/evaluator"
 )
 
 // Outcome results. A policy the server rejects at creation is compared with
-// kat failing to compile or evaluate it.
+// kat rejecting it with the same error; any other kat error never matches.
 const (
-	resultAllowed = "allowed"
-	resultDenied  = "denied"
-	resultError   = "error"
+	resultAllowed  = "allowed"
+	resultDenied   = "denied"
+	resultRejected = "rejected"
+	resultError    = "error"
 )
 
 // outcome is what both sides are normalized to before they are compared.
 type outcome struct {
-	Result           string            `json:"result"`
-	Message          string            `json:"message,omitempty"`
-	Warnings         []string          `json:"warnings,omitempty"`
-	AuditAnnotations map[string]string `json:"auditAnnotations,omitempty"`
-	Object           map[string]any    `json:"object,omitempty"`
+	Result           string              `json:"result"`
+	Message          string              `json:"message,omitempty"`
+	Binding          string              `json:"binding,omitempty"`
+	Reason           metav1.StatusReason `json:"reason,omitempty"`
+	Warnings         []string            `json:"warnings,omitempty"`
+	AuditAnnotations map[string]string   `json:"auditAnnotations,omitempty"`
+	Object           map[string]any      `json:"object,omitempty"`
 }
 
 // caseRun is everything the harness computes for one case.
@@ -70,15 +75,19 @@ func (c *katCase) isInconclusive() bool { return len(c.run.problems) > 0 }
 
 // katOutcome normalizes kat's raw evaluation result.
 func katOutcome(res *evaluator.EvaluationResult, err error, object map[string]any, objectErr string) outcome {
+	if invalid, ok := errors.AsType[*evaluator.InvalidPolicyError](err); ok {
+		return outcome{Result: resultRejected, Message: invalid.Error()}
+	}
+
 	switch {
 	case err != nil:
-		return outcome{Result: resultError}
-	case res == nil:
-		return outcome{Result: resultError}
+		return outcome{Result: resultError, Message: err.Error()}
 	case !res.Allowed:
 		return outcome{
 			Result:           resultDenied,
 			Message:          res.Message,
+			Binding:          res.Binding,
+			Reason:           res.Reason,
 			Warnings:         res.Warnings,
 			AuditAnnotations: res.AuditAnnotations,
 		}
@@ -110,16 +119,7 @@ func (c *katCase) layer1Failures() []string {
 		return nil
 	}
 
-	msg := "kat differs from the kube-apiserver (-server +kat):\n" + c.run.diff
-	if c.run.katErr != nil {
-		msg += "\nkat error: " + c.run.katErr.Error()
-	}
-
-	if c.run.server.policyErr != "" {
-		msg += "\nserver rejected the policy: " + c.run.server.policyErr
-	}
-
-	return []string{msg}
+	return []string{"kat differs from the kube-apiserver (-server +kat):\n" + c.run.diff}
 }
 
 // withoutServerFields drops the metadata the API server sets rather than a

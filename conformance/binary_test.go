@@ -135,7 +135,9 @@ func binaryCaseFiles(c *katCase) (map[string][]byte, error) {
 		yamlFiles[".authorizer.yaml"] = c.tc.Authorizer
 	}
 
-	if len(run.server.annotations) > 0 {
+	// Written even when empty, so kat also asserts the server's lack of them.
+	yamlFiles[".annotations.yaml"] = map[string]string{}
+	if run.server.annotations != nil {
 		yamlFiles[".annotations.yaml"] = run.server.annotations
 	}
 
@@ -158,9 +160,7 @@ func binaryCaseFiles(c *katCase) (map[string][]byte, error) {
 		files[".message.txt"] = []byte(run.server.message + "\n")
 	}
 
-	if len(run.server.warnings) > 0 {
-		files[".warnings.txt"] = []byte(strings.Join(run.server.warnings, "\n") + "\n")
-	}
+	files[".warnings.txt"] = []byte(strings.Join(run.server.warnings, "\n") + "\n")
 
 	return files, nil
 }
@@ -186,6 +186,7 @@ func binaryRequest(c *katCase) map[string]any {
 		req["subResource"] = c.subresource
 	} else {
 		req["options"] = requestOptions(c.op)
+		req["dryRun"] = true
 	}
 
 	for key, u := range map[string]*unstructured.Unstructured{
@@ -220,7 +221,7 @@ var errKatExit = errors.New("kat exited with an error")
 func (h *shardRun) runBinary(ctx context.Context, dir string) {
 	var stdout, stderr bytes.Buffer
 
-	cmd := exec.CommandContext(ctx, katBinary, "-json", dir)
+	cmd := exec.CommandContext(ctx, katBinary, "-json", "-k8s-version", h.k8sVersion, dir) //nolint:gosec // The harness builds kat and the suite.
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
