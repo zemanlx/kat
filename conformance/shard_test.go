@@ -13,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/authentication/user"
+
+	"github.com/zemanlx/kat/internal/evaluator"
 )
 
 // objectKey identifies one stored object.
@@ -89,6 +91,23 @@ type rbacNeed struct {
 	user   *user.DefaultInfo
 	grants []rbacRule
 	denies []rbacRule
+	// allowMocks are the grants that come from Allow authorizer mocks. kat
+	// answers an unmocked check with NoOpinion, so cases of one user share a
+	// server only when they mock the same Allow checks.
+	allowMocks []rbacRule
+}
+
+func sameRules(a, b []rbacRule) bool {
+	set := func(rules []rbacRule) map[rbacRule]bool {
+		m := make(map[rbacRule]bool, len(rules))
+		for _, r := range rules {
+			m[r] = true
+		}
+
+		return m
+	}
+
+	return maps.Equal(set(a), set(b))
 }
 
 func (n rbacNeed) conflict() (rbacRule, rbacRule, bool) {
@@ -117,10 +136,6 @@ func (c *katCase) computeNeeds(mapper meta.RESTMapper) error {
 
 	switch c.op {
 	case admissionv1.Create:
-		if c.gvr == namespacesGVR() {
-			key.namespace = ""
-		}
-
 		c.needs = append(c.needs, need{key: key, present: false})
 	case admissionv1.Update, admissionv1.Delete:
 		c.needs = append(c.needs, storedNeed(key, c.oldObject))
@@ -201,7 +216,7 @@ func (c *katCase) paramsNeed(mapper meta.RESTMapper) (*need, error) {
 	paramKind := c.paramKind()
 	params := c.tc.Params
 
-	paramRef, err := c.paramRef()
+	paramRef, err := c.paramsRef(params)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +236,47 @@ func (c *katCase) paramsNeed(mapper meta.RESTMapper) (*need, error) {
 		return &need{key: objectKey{resource: mapping.Resource, namespace: namespace, name: paramRef.Name}}, nil
 	}
 
+	if err := paramsInNamespace(mapping, params, namespace); err != nil {
+		return nil, err
+	}
+
 	return c.seedParams(mapping, params, namespace), nil
+}
+
+// paramsInNamespace rejects a params fixture that is not where the server
+// looks params up (kat rejects it too), and a namespace on cluster-scoped
+// params.
+func paramsInNamespace(mapping *meta.RESTMapping, params *unstructured.Unstructured, namespace string) error {
+	if mapping.Scope.Name() != meta.RESTScopeNameNamespace && params.GetNamespace() != "" {
+		return fmt.Errorf("%w: params of cluster-scoped %s have namespace %q", errUnsupportedCase, mapping.GroupVersionKind.Kind, params.GetNamespace())
+	}
+
+	if namespace == "" || params.GetNamespace() == "" || params.GetNamespace() == namespace {
+		return nil
+	}
+
+	return fmt.Errorf("%w: params are looked up in namespace %q, params object is in %q: %w",
+		errUnsupportedCase, namespace, params.GetNamespace(), evaluator.ErrParamNamespaceMismatch)
+}
+
+// paramsRef returns the binding's paramRef, or an error when kat cannot
+// resolve it offline: a selector, or a fixture name that is not paramRef.name.
+func (c *katCase) paramsRef(params *unstructured.Unstructured) (*admissionregv1.ParamRef, error) {
+	paramRef, err := c.paramRef()
+	if err != nil {
+		return nil, err
+	}
+
+	if paramRef != nil && paramRef.Selector != nil && paramRef.Name == "" {
+		return nil, fmt.Errorf("%w: %w", errUnsupportedCase, evaluator.ErrParamSelectorUnsupported)
+	}
+
+	if params != nil && paramRef != nil && paramRef.Name != "" && params.GetName() != "" && params.GetName() != paramRef.Name {
+		return nil, fmt.Errorf("%w: paramRef.name is %q, params object is %q: %w",
+			errUnsupportedCase, paramRef.Name, params.GetName(), evaluator.ErrParamNameMismatch)
+	}
+
+	return paramRef, nil
 }
 
 // seedParams requires the fixture's params to exist, by default in namespace.
@@ -281,10 +336,10 @@ func paramsMapping(mapper meta.RESTMapper, params *unstructured.Unstructured, pa
 // Allow authorizer mock, and records Deny mocks, which must stay ungranted.
 func (c *katCase) computeRBAC() error {
 	c.rbac = rbacNeed{user: c.user}
-	mocks := c.authorizerMocks()
+	mocks := c.tc.Authorizer
 
 	if isMaster(c.user) {
-		if slices.ContainsFunc(mocks, func(m mockConfig) bool { return m.Decision != "allow" }) {
+		if slices.ContainsFunc(mocks, func(m evaluator.AuthorizationMockConfig) bool { return m.Decision != "allow" }) {
 			return fmt.Errorf("%w: a system:masters user cannot be denied by an authorizer mock", errUnsupportedCase)
 		}
 
@@ -302,6 +357,8 @@ func (c *katCase) computeRBAC() error {
 		rule := rbacRule{group: m.Group, resource: m.Resource, subresource: m.Subresource, namespace: m.Namespace, verb: m.Verb}
 		if m.Decision == "allow" {
 			c.rbac.grants = append(c.rbac.grants, rule)
+			c.rbac.allowMocks = append(c.rbac.allowMocks, rule)
+
 			if rule.namespace != "" {
 				c.needs = append(c.needs, namespaceNeed(rule.namespace, nil))
 			}
@@ -330,8 +387,11 @@ func requestVerb(op admissionv1.Operation) string {
 	return "create"
 }
 
-// shard is a set of cases one apiserver can run together.
+// shard is a set of cases one apiserver can run together. Its cases test one
+// policy, the only one installed: the server runs every installed policy,
+// while kat evaluates only the policy under test.
 type shard struct {
+	policy  string
 	cases   []*katCase
 	objects map[objectKey]need
 	users   map[string]rbacNeed
@@ -358,7 +418,7 @@ func shardCases(cases []*katCase) []*shard {
 		}
 
 		if !placed {
-			s := &shard{objects: map[objectKey]need{}, users: map[string]rbacNeed{}}
+			s := &shard{policy: c.policyName, objects: map[objectKey]need{}, users: map[string]rbacNeed{}}
 			s.add(c)
 			shards = append(shards, s)
 		}
@@ -369,6 +429,10 @@ func shardCases(cases []*katCase) []*shard {
 
 // add places c into the shard if its needs agree with the shard's.
 func (s *shard) add(c *katCase) bool {
+	if c.policyName != s.policy {
+		return false
+	}
+
 	objects := maps.Clone(s.objects)
 
 	for _, n := range c.needs {
@@ -389,8 +453,13 @@ func (s *shard) add(c *katCase) bool {
 
 	users := maps.Clone(s.users)
 	if c.rbac.grants != nil || c.rbac.denies != nil {
-		merged := users[c.user.Name]
+		merged, ok := users[c.user.Name]
+		if ok && !sameRules(merged.allowMocks, c.rbac.allowMocks) {
+			return false
+		}
+
 		merged.user = c.user
+		merged.allowMocks = c.rbac.allowMocks
 		merged.grants = append(slices.Clone(merged.grants), c.rbac.grants...)
 		merged.denies = append(slices.Clone(merged.denies), c.rbac.denies...)
 

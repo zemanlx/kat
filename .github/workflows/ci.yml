@@ -6,8 +6,12 @@ on:
     pull_request:
         branches: [main]
     schedule:
-        # Weekly, to pick up new Kubernetes patch releases in the conformance job.
+        # Weekly. The conformance job's envtest cache key includes the UTC ISO
+        # week, so this run fetches new Kubernetes patch releases.
         - cron: "0 6 * * 1"
+
+permissions:
+    contents: read
 
 jobs:
     test:
@@ -23,14 +27,28 @@ jobs:
             - name: Run Tests
               run: go test -v ./...
 
+    k8s-versions:
+        name: Kubernetes versions
+        runs-on: ubuntu-latest
+        outputs:
+            k8s: ${{ steps.versions.outputs.k8s }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Read conformance/k8s-versions.json
+              id: versions
+              run: |
+                  k8s="$(jq -ce 'select(type == "array" and length > 0)' conformance/k8s-versions.json)"
+                  echo "k8s=${k8s}" >> "$GITHUB_OUTPUT"
+
     conformance:
         name: Conformance (Kubernetes ${{ matrix.k8s }})
+        needs: k8s-versions
         runs-on: ubuntu-latest
         strategy:
             fail-fast: false
             matrix:
-                # Keep in sync with conformance/k8s-versions.txt.
-                k8s: ["1.36.x", "1.37.x"]
+                k8s: ${{ fromJSON(needs.k8s-versions.outputs.k8s) }}
         steps:
             - uses: actions/checkout@v4
 
@@ -42,11 +60,15 @@ jobs:
                       go.sum
                       conformance/go.sum
 
+            - name: Envtest cache week
+              id: envtest-week
+              run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
             - name: Cache envtest binaries
               uses: actions/cache@v4
               with:
                   path: bin
-                  key: envtest-${{ runner.os }}-${{ matrix.k8s }}-${{ hashFiles('hack/conformance.sh') }}
+                  key: envtest-${{ runner.os }}-${{ matrix.k8s }}-${{ steps.envtest-week.outputs.week }}-${{ hashFiles('hack/conformance.sh') }}
 
             - name: Run conformance tests
               env:

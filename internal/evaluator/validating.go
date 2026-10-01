@@ -369,7 +369,11 @@ func (e *Evaluator) evaluateValidating(
 			continue
 		}
 
-		params, err := collectParams(policy.Spec.ParamKind, binding.Spec.ParamRef, req.params)
+		params, err := collectParams(policy.Spec.ParamKind, binding.Spec.ParamRef, req.params, req.attr.GetNamespace())
+		if fatalParamsErr(err) {
+			return nil, err
+		}
+
 		if err != nil {
 			configError(binding.Name, err)
 

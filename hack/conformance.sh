@@ -3,7 +3,7 @@
 # kube-apiserver, against one or more Kubernetes versions.
 #
 # Usage:
-#   ./hack/conformance.sh                 # every version in conformance/k8s-versions.txt
+#   ./hack/conformance.sh                 # every version in conformance/k8s-versions.json
 #   ./hack/conformance.sh 1.37.x          # one version, as a setup-envtest selector
 #   ./hack/conformance.sh 1.36.x 1.37.x   # several versions, in parallel
 #
@@ -13,8 +13,13 @@
 # CONFORMANCE_PARALLEL caps how many apiservers run at once per version
 # (default 4). The kat suites generated from the server's results are kept in
 # conformance/.artifacts/<server version>; run `kat <dir>` on one to reproduce
-# a binary-layer failure.
+# a binary-layer failure. Needs bash 4 or later (macOS ships 3.2; use Homebrew's).
 set -euo pipefail
+
+if ((BASH_VERSINFO[0] < 4)); then
+	echo "bash 4 or later is required, this is ${BASH_VERSION}" >&2
+	exit 1
+fi
 
 setup_envtest_version="v0.25.1"
 
@@ -32,7 +37,13 @@ fi
 if [[ $# -gt 0 ]]; then
 	versions=("$@")
 else
-	mapfile -t versions < <(grep -Ev '^[[:space:]]*(#|$)' "${repo_root}/conformance/k8s-versions.txt")
+	# A flat JSON list of strings, so no JSON parser is needed.
+	mapfile -t versions < <(grep -o '"[^"]*"' "${repo_root}/conformance/k8s-versions.json" | tr -d '"')
+fi
+
+if [[ ${#versions[@]} -eq 0 ]]; then
+	echo "no Kubernetes versions to test; check conformance/k8s-versions.json" >&2
+	exit 1
 fi
 
 # Download one version at a time; setup-envtest's store is not safe for

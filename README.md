@@ -188,9 +188,11 @@ kat -run "my-policy.basic-test" ./policies/my-policy
 - `-run <regex>`: Run only tests matching the regex pattern.
 - `-v`: Verbose output (shows detailed execution steps).
 - `-json`: Emit newline-delimited JSON events, compatible with `go test -json` (works with tooling like `gotestsum`).
-- `-k8s-version <major.minor>`: Behave like this Kubernetes version's API server (default: the latest
-  supported, currently `1.37`; `1.36` is the oldest). It selects the CEL libraries and validation rules
-  available to policies, so set it to your cluster's version.
+- `-k8s-version <major.minor>`: Check new policies the way this Kubernetes version's API server does
+  (default: the latest supported, currently `1.37`; `1.36` is the oldest). It selects the creation-time
+  CEL feature set, which is the previous minor's libraries, so a policy the server accepts still works
+  after a rollback. Evaluating a request always uses the CEL libraries linked into this kat build
+  (currently 1.37); that set cannot be narrowed. Structural validation uses those same linked rules.
 
 ```bash
 kat -v -run "prod-.*-deny" .
@@ -427,6 +429,16 @@ Authoring a test is a short loop:
 - As in the API server, `matchConditions` cannot reference `variables`, and
   `namespaceObject` is null inside them. A condition that fails to evaluate denies the
   request under `failurePolicy: Fail` (the default) and skips the policy under `Ignore`.
+- A policy with no binding file is evaluated as if it were bound once: Deny and no params
+  for a validating policy, and an empty binding for a mutating policy. A cluster ignores a
+  policy that has no binding.
+- A `paramRef` that uses `selector` instead of `name` is not supported offline, and the
+  case fails instead of guessing which objects match. When the params object has a name,
+  it must be `paramRef.name`, and when it has a namespace, it must be where the server looks
+  (`paramRef.namespace`, else the request's). `failurePolicy: Ignore` does not hide these
+  errors. kat does not know whether a `paramKind` is namespaced, so it does not report the
+  server's errors for a namespaced `paramRef` on a cluster-scoped request, or for
+  `paramRef.namespace` with a cluster-scoped `paramKind`.
 - When a binding's `paramRef` finds no params, `parameterNotFoundAction: Deny` denies
   the request before any expression runs, and `Allow` skips the policy.
 - CEL list and map literals must be homogeneous, as in the API server. Build
@@ -435,13 +447,26 @@ Authoring a test is a short loop:
   are created: a MutatingAdmissionPolicy without `reinvocationPolicy`, an unknown
   `reason`, or a CEL expression that doesn't compile fails every test of the policy with
   "the API server would reject the policy: …" and the server's error.
-- The CEL environment is the API server's for the selected `-k8s-version`. Libraries the
-  server doesn't offer (such as `math.` and `base64.` from cel-go) are not available.
+- Creation-time CEL is the API server's NewExpressions environment for `-k8s-version`
+  (compatibility version one minor older). Admission evaluates with StoredExpressions from
+  the linked libraries, which includes every feature that library knows and cannot be
+  downgraded to an older apiserver. Libraries the server doesn't offer (such as `math.` and
+  `base64.` from cel-go) are not available. Structural validation is the linked version's rules.
 - A policy with `reinvocationPolicy: IfNeeded` that changes the object is run once more,
   as the API server does, so a non-idempotent mutation is applied twice.
 - Several bindings of one policy are all evaluated; the first denial wins.
+- A JSON patch whose result is not a valid object of a built-in kind (an unknown field, a
+  wrong type) denies the request with the API server's `Internal error occurred: …`,
+  regardless of `failurePolicy`. Custom resources are not checked, as on the server.
+- An `object` or `oldObject` of a built-in kind must be valid as written. The API server
+  drops unknown fields before admission runs and rejects a field of the wrong type, so kat
+  fails such a case with an input error instead of evaluating something no cluster would see.
 - Objects are not defaulted after mutation (for example a Pod's `imagePullPolicy`), so a
   `.gold.yaml` contains only what the policy itself set.
+- ApplyConfiguration merges use the built-in OpenAPI schema embedded in kat. A kind that
+  is not in that schema, including a custom resource, is merged schemaless: every list is
+  atomic. That matches a CRD without a structural schema. A CRD that has a structural
+  schema is merged by its list-map keys on a real apiserver, and kat does not.
 
 ## Conformance with the API server
 

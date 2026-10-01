@@ -2,10 +2,12 @@ package evaluator
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -791,4 +793,103 @@ func TestEvaluate_MissingParams(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEvaluate_ParamRefIdentity(t *testing.T) {
+	t.Parallel()
+
+	e, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ignore := admissionregv1.Ignore
+	deny := new(admissionregv1.DenyAction)
+	object := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": "test-pod"},
+	}}
+	request := &admissionv1.AdmissionRequest{Operation: admissionv1.Create, Namespace: "default"}
+	policy := validVAP(&admissionregv1.ValidatingAdmissionPolicy{Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+		ParamKind: configMapParams(), FailurePolicy: &ignore,
+		Validations: []admissionregv1.Validation{{Expression: `params.data.ok == "true"`}},
+	}})
+
+	tests := []struct {
+		name     string
+		ref      *admissionregv1.ParamRef
+		params   string
+		paramsNS string
+		wantErr  error
+	}{
+		{name: "selector", params: "params", wantErr: ErrParamSelectorUnsupported, ref: &admissionregv1.ParamRef{Selector: &metav1.LabelSelector{}, ParameterNotFoundAction: deny}},
+		{name: "name mismatch", params: "other", wantErr: ErrParamNameMismatch, ref: &admissionregv1.ParamRef{Name: "params", ParameterNotFoundAction: deny}},
+		{name: "matching name", params: "params", ref: &admissionregv1.ParamRef{Name: "params", ParameterNotFoundAction: deny}},
+		{name: "request namespace", params: "params", paramsNS: "default", ref: &admissionregv1.ParamRef{Name: "params", ParameterNotFoundAction: deny}},
+		{name: "not the request namespace", params: "params", paramsNS: "other", wantErr: ErrParamNamespaceMismatch, ref: &admissionregv1.ParamRef{Name: "params", ParameterNotFoundAction: deny}},
+		{name: "paramRef namespace", params: "params", paramsNS: "team", ref: &admissionregv1.ParamRef{Name: "params", Namespace: "team", ParameterNotFoundAction: deny}},
+		{name: "not the paramRef namespace", params: "params", paramsNS: "default", wantErr: ErrParamNamespaceMismatch, ref: &admissionregv1.ParamRef{Name: "params", Namespace: "team", ParameterNotFoundAction: deny}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			params := configMapNamed(tt.params)
+			params.SetNamespace(tt.paramsNS)
+
+			result, err := e.EvaluateValidating(policy, &admissionregv1.ValidatingAdmissionPolicyBinding{
+				Name: "test-binding",
+				Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+					PolicyName: policy.Name, ParamRef: tt.ref,
+					ValidationActions: []admissionregv1.ValidationAction{admissionregv1.Deny},
+				},
+			}, request, object, nil, params, nil, nil, nil)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr == nil && !result.Allowed {
+				t.Errorf("Allowed = false, message = %q", result.Message)
+			}
+		})
+	}
+}
+
+func TestEvaluate_MutatingParamSelector(t *testing.T) {
+	t.Parallel()
+
+	e, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ignore := admissionregv1.Ignore
+
+	_, err = e.EvaluateMutating(
+		validMAP(&admissionregv1.MutatingAdmissionPolicy{Spec: admissionregv1.MutatingAdmissionPolicySpec{
+			ParamKind: configMapParams(), FailurePolicy: &ignore,
+			Mutations: []admissionregv1.Mutation{{
+				PatchType: admissionregv1.PatchTypeJSONPatch,
+				JSONPatch: &admissionregv1.JSONPatch{Expression: `[JSONPatch{op: "add", path: "/metadata/labels", value: {}}]`},
+			}},
+		}}),
+		&admissionregv1.MutatingAdmissionPolicyBinding{Name: "test-binding", Spec: admissionregv1.MutatingAdmissionPolicyBindingSpec{
+			PolicyName: "test-policy",
+			ParamRef:   &admissionregv1.ParamRef{Selector: &metav1.LabelSelector{}, ParameterNotFoundAction: new(admissionregv1.DenyAction)},
+		}},
+		&admissionv1.AdmissionRequest{Operation: admissionv1.Create},
+		&unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": "test-pod"}}},
+		nil, configMapNamed("params"), nil, nil, nil,
+	)
+	if !errors.Is(err, ErrParamSelectorUnsupported) {
+		t.Fatalf("error = %v, want %v", err, ErrParamSelectorUnsupported)
+	}
+}
+
+func configMapNamed(name string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1", "kind": "ConfigMap",
+		"metadata": map[string]any{"name": name},
+		"data":     map[string]any{"ok": "true"},
+	}}
 }

@@ -50,10 +50,14 @@ Always follow this loop. Do not consider a test done until `kat` passes it.
   policies it is required.
 - **`<test-name>`** — a descriptive slug (may contain dots).
 - **`<expect>`** — `allow` | `deny` | `warn` | `audit`. Only `.deny.`/`.deny`
-  means "expect denied"; everything else expects the request allowed. This applies
-  to **validating** policies only. Mutating policies always allow, so **omit the
+  means "expect denied"; everything else expects the request allowed. This is
+  mostly for **validating** policies. Mutating policies usually allow, so **omit the
   expect token** for them — name the case after what it mutates (e.g.
   `<policy>.<what-it-mutates>.object.yaml`) and assert the result with `.gold.yaml`.
+  A mutating policy denies when its JSON patch fails or yields an invalid built-in
+  object, when params are missing under `parameterNotFoundAction: Deny`, or when a
+  match condition errors under `failurePolicy: Fail`; test that with `.deny.` and a
+  `.message.txt`.
 - **`<type>`** — the input file kind (see table). Files that share the base name
   `<policy-name>.<test-name>.<expect>` are merged into one test case.
 
@@ -121,7 +125,7 @@ Advanced inputs (combine with an object, in the same base name):
 - `authorizer.authorizer.yaml` — mocks Authorizer (SubjectAccessReview) checks
 
 Rename each to `<policy-name>.<test-name>.<expect>.<type>.yaml` before use. The
-`mutation` set is the exception: mutating policies always allow, so drop the
+`mutation` set is the exception: mutating policies usually allow, so drop the
 `<expect>` token and name it `<policy-name>.<test-name>.<type>.yaml` (e.g.
 `add-default-labels.no-labels.object.yaml` + `.gold.yaml`).
 
@@ -134,7 +138,11 @@ Rename each to `<policy-name>.<test-name>.<expect>.<type>.yaml` before use. The
   and `objectSelector`. CONNECT tests need `resource:` (e.g. `{version: v1, resource: pods}`)
   plus `subResource:` in the `.request.yaml`.
 - Wrong `<expect>` token (only `deny` flips the expectation). Do not add an
-  `<expect>` token to mutating-policy tests — they always allow; assert via `.gold.yaml`.
+  `<expect>` token to normal mutating-policy tests; assert via `.gold.yaml`. Use
+  `.deny.` only for a request the mutating policy rejects.
+- A typo or wrongly typed field in an object of a built-in kind. The API server
+  drops unknown fields and rejects wrong types before admission, so kat fails the
+  case with "has a field the API server drops" or "would reject the object".
 - Mutating policy without a `.gold.yaml`.
 - Same field defined in both `.request.yaml` and a split file → conflict error.
 - Using `v1beta1` policies — only `admissionregistration.k8s.io/v1` is supported.
@@ -142,6 +150,7 @@ Rename each to `<policy-name>.<test-name>.<expect>.<type>.yaml` before use. The
   without `reinvocationPolicy`, a CEL expression that doesn't compile) fails every
   case with "the API server would reject the policy: …". Fix the policy, not the test.
 - CEL libraries the API server doesn't offer (e.g. `math.`, `base64.`) don't compile.
-  Pass `-k8s-version <major.minor>` (default latest, min `1.36`) to match the cluster.
+  Pass `-k8s-version <major.minor>` (default latest, min `1.36`) so creation-time CEL
+  checks match the cluster's version.
 - `reinvocationPolicy: IfNeeded` reruns a policy that changed the object, so a
   non-idempotent mutation (append, counter) is applied twice in `.gold.yaml`.

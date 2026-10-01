@@ -140,10 +140,8 @@ func withoutManagedFields(u *unstructured.Unstructured) *unstructured.Unstructur
 	return out
 }
 
-// normalizeObject keeps only what a mutation can meaningfully change.
+// normalizeObject keeps only what a mutation can meaningfully change. Both
+// sides went through the server's dry-run, so status is comparable.
 func normalizeObject(u *unstructured.Unstructured) map[string]any {
-	out := withoutServerFields(u)
-	unstructured.RemoveNestedField(out.Object, "status")
-
-	return out.Object
+	return withoutServerFields(u).Object
 }

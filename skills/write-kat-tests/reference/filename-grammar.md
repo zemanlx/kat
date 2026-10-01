@@ -114,10 +114,14 @@ optional; with multiple policies it is required and must match a policy's
 Only the `deny` token flips the allow/deny expectation. `warn`/`audit` are
 allow-with-assertions and rely on their companion files for the real check.
 
-The expect token is a **validating**-policy concept. A `MutatingAdmissionPolicy`
-always returns `Allowed == true` (it mutates, never denies), so the token has no
-effect for mutating tests. Omit it: name the case `<policy-name>.<test-name>`
-(no `<expect>`) and assert the outcome with a `.gold.yaml` companion file.
+The expect token is mostly a **validating**-policy concept. A
+`MutatingAdmissionPolicy` usually allows, so name a normal mutating case
+`<policy-name>.<test-name>` (no `<expect>`) and assert the outcome with a
+`.gold.yaml` companion file. It denies, as on the API server, when its JSON patch
+fails to apply or yields an invalid object of a built-in kind (an unknown field, a
+wrong type), when its params are missing under `parameterNotFoundAction: Deny`, or
+when a match condition fails to evaluate under `failurePolicy: Fail`. Name such a
+case `.deny.` and pin the message with `.message.txt`.
 
 ## Operation inference
 

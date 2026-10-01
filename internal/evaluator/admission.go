@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 
@@ -10,12 +11,14 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apiserver/pkg/admission"
 	plugincel "k8s.io/apiserver/pkg/admission/plugin/cel"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/cel/environment"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/yaml"
 )
 
@@ -31,6 +34,16 @@ const (
 var (
 	errUnsupportedVersion = errors.New("unsupported Kubernetes version")
 	errParamsNotFound     = errors.New("no params found for policy binding with `Deny` parameterNotFoundAction")
+	// ErrParamSelectorUnsupported is returned when a binding selects params with
+	// a selector. kat has no cluster to list, so it does not guess.
+	ErrParamSelectorUnsupported = errors.New("selector paramRefs are not supported offline")
+	// ErrParamNameMismatch is returned when the fixture params object is named
+	// and that name is not paramRef.name.
+	ErrParamNameMismatch = errors.New("params object name does not match paramRef.name")
+	// ErrParamNamespaceMismatch is returned when the fixture params object has a
+	// namespace other than the one the server looks params up in: paramRef's
+	// namespace, else the request's.
+	ErrParamNamespaceMismatch = errors.New("params object namespace is not where paramRef looks")
 )
 
 // Evaluator evaluates admission policies the way a kube-apiserver of one
@@ -51,8 +64,12 @@ func New() (*Evaluator, error) {
 	return NewForVersion(DefaultKubernetesVersion)
 }
 
-// NewForVersion creates an Evaluator that behaves like the API server of the
-// given major.minor version.
+// NewForVersion creates an Evaluator that validates new policies the way the
+// API server of the given major.minor version does. The compatibility version
+// is one minor below that, which is what filters NewExpressions, the
+// creation-time CEL feature set. Admission evaluates with StoredExpressions:
+// every feature the linked k8s.io/apiserver knows. That set cannot be
+// downgraded. Structural validation is the linked version's rules as well.
 func NewForVersion(kubernetesVersion string) (*Evaluator, error) {
 	v, err := version.ParseMajorMinor(kubernetesVersion)
 	if err != nil || v.Major() != 1 || v.Minor() < minKubernetesMinor || v.Minor() > maxKubernetesMinor {
@@ -67,18 +84,19 @@ func NewForVersion(kubernetesVersion string) (*Evaluator, error) {
 }
 
 // policyCompiler returns a compiler for one policy's expressions. Variable
-// composition needs a compiler of its own.
-func (e *Evaluator) policyCompiler(composition bool) plugincel.Compiler {
+// composition needs a compiler of its own. A failure is returned to the
+// caller; it is not replaced with the stateless compiler.
+func (e *Evaluator) policyCompiler(composition bool) (plugincel.Compiler, error) {
 	if !composition {
-		return e.statelessCompiler
+		return e.statelessCompiler, nil
 	}
 
 	compiler, err := plugincel.NewCompositedCompiler(e.env)
 	if err != nil {
-		return e.statelessCompiler
+		return nil, fmt.Errorf("create CEL compiler: %w", err)
 	}
 
-	return compiler
+	return compiler, nil
 }
 
 // request is a test case's admission request as an admission plugin sees it.
@@ -100,6 +118,10 @@ func newRequest(
 ) (*request, error) {
 	if req == nil {
 		req = &admissionv1.AdmissionRequest{}
+	}
+
+	if err := errors.Join(checkInput("object", object), checkInput("oldObject", oldObject)); err != nil {
+		return nil, err
 	}
 
 	attr, err := newAttributes(req, object, oldObject, namespaceObj, userInfo)
@@ -215,6 +237,46 @@ func requestUser(req *admissionv1.AdmissionRequest) user.Info {
 	return info
 }
 
+// decodeTyped decodes u strictly into the typed object of its built-in kind.
+// A kind without a Go type, such as a custom resource, stays unstructured on
+// the server as well, and is not checked.
+func decodeTyped(u *unstructured.Unstructured) error {
+	typed, err := scheme.Scheme.New(u.GroupVersionKind())
+	if err != nil {
+		return nil //nolint:nilerr // Not a built-in kind.
+	}
+
+	js, err := u.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("encode object: %w", err)
+	}
+
+	decoder := json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{Strict: true})
+	_, _, err = decoder.Decode(js, nil, typed)
+
+	return err //nolint:wrapcheck // The server's error, unchanged.
+}
+
+// checkInput rejects an input object that the API server would not pass to
+// admission as written. With the default fieldValidation (Warn) it drops
+// unknown fields, and it rejects a field of the wrong type.
+func checkInput(name string, u *unstructured.Unstructured) error {
+	if u == nil {
+		return nil
+	}
+
+	err := decodeTyped(u)
+
+	switch {
+	case err == nil:
+		return nil
+	case runtime.IsStrictDecodingError(err):
+		return fmt.Errorf("%s has a field the API server drops before admission: %w", name, err)
+	default:
+		return fmt.Errorf("the API server would reject the %s: %w", name, err)
+	}
+}
+
 // asRuntimeObject keeps a nil *Unstructured from becoming a non-nil interface.
 func asRuntimeObject(u *unstructured.Unstructured) runtime.Object {
 	if u == nil {
@@ -226,7 +288,16 @@ func asRuntimeObject(u *unstructured.Unstructured) runtime.Object {
 
 // collectParams is the server's generic.CollectParams for a test case, which
 // has at most one params object. No params means the binding is skipped.
-func collectParams(paramKind *admissionregv1.ParamKind, paramRef *admissionregv1.ParamRef, params *unstructured.Unstructured) ([]runtime.Object, error) {
+func collectParams(
+	paramKind *admissionregv1.ParamKind,
+	paramRef *admissionregv1.ParamRef,
+	params *unstructured.Unstructured,
+	namespace string,
+) ([]runtime.Object, error) {
+	if err := checkParamRef(paramKind, paramRef, params, namespace); err != nil {
+		return nil, err
+	}
+
 	switch {
 	case paramKind == nil || paramRef == nil:
 		return []runtime.Object{nil}, nil
@@ -243,6 +314,46 @@ func collectParams(paramKind *admissionregv1.ParamKind, paramRef *admissionregv1
 	}
 
 	return nil, nil
+}
+
+// checkParamRef rejects a selector, and a named or namespaced fixture that is
+// not where paramRef looks. kat cannot list a cluster, and it does not use the
+// wrong object. kat does not know the paramKind's scope, so a fixture without
+// a namespace, or a request without one, is not checked.
+func checkParamRef(paramKind *admissionregv1.ParamKind, paramRef *admissionregv1.ParamRef, params *unstructured.Unstructured, namespace string) error {
+	if paramKind == nil || paramRef == nil {
+		return nil
+	}
+
+	if paramRef.Selector != nil && paramRef.Name == "" {
+		return ErrParamSelectorUnsupported
+	}
+
+	if params == nil {
+		return nil
+	}
+
+	if paramRef.Name != "" && params.GetName() != "" && params.GetName() != paramRef.Name {
+		return fmt.Errorf("%w: paramRef.name is %q, params object is %q", ErrParamNameMismatch, paramRef.Name, params.GetName())
+	}
+
+	return checkParamsNamespace(cmp.Or(paramRef.Namespace, namespace), params)
+}
+
+// checkParamsNamespace rejects a namespaced params fixture that is not in the
+// namespace the server looks params up in.
+func checkParamsNamespace(namespace string, params *unstructured.Unstructured) error {
+	if namespace == "" || params.GetNamespace() == "" || params.GetNamespace() == namespace {
+		return nil
+	}
+
+	return fmt.Errorf("%w: params are looked up in namespace %q, params object is in %q", ErrParamNamespaceMismatch, namespace, params.GetNamespace())
+}
+
+// fatalParamsErr reports a params error kat cannot turn into an admission
+// decision. failurePolicy must not swallow it.
+func fatalParamsErr(err error) bool {
+	return errors.Is(err, ErrParamSelectorUnsupported) || errors.Is(err, ErrParamNameMismatch) || errors.Is(err, ErrParamNamespaceMismatch)
 }
 
 // failurePolicy is the policy's failurePolicy, which the server defaults to Fail.

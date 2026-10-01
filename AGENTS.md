@@ -58,9 +58,12 @@ go build -o kat . && ./kat ./test-policies-pass/validating/require-owner-label
 - Policies and bindings are defaulted and validated as on creation
   (`internal/evaluator/validation.go`, a port of the API server's). A policy the
   server would reject fails all its cases with "the API server would reject the
-  policy: …". The CEL environment is the server's for `-k8s-version`
-  (`k8s.io/apiserver/pkg/cel/environment`), and admission reuses the apiserver's
-  CEL compiler, match conditions and patchers (`internal/evaluator/validating.go`,
+  policy: …". `-k8s-version` selects the creation-time CEL feature set
+  (NewExpressions, compatibility version one minor older) within 1.36–1.37.
+  Admission evaluation always uses StoredExpressions from the linked
+  `k8s.io/apiserver` and cannot be downgraded. Structural validation is always
+  the linked version's rules. Admission reuses the apiserver's CEL compiler,
+  match conditions and patchers (`internal/evaluator/validating.go`,
   `mutating.go`); do not add `k8s.io/kubernetes`.
 
 ## Test file conventions (the API is the filename)
@@ -72,9 +75,9 @@ Pattern: `<policy-name>.<test-name>.<expect>.<type>.yaml`
 - `<expect>`: `allow` | `deny` | `warn` | `audit`. Parsed by substring:
   `.deny.`/`.deny` ⇒ expect denied; everything else ⇒ expect allowed. This token
   is a **validating** concept: mutating policies allow (unless their params are
-  missing under `parameterNotFoundAction: Deny`, or a match condition fails to
-  evaluate), so omit it and name the case after what it mutates (assert the result
-  via `.gold.yaml`).
+  missing under `parameterNotFoundAction: Deny`, a match condition fails to
+  evaluate, or a JSON patch fails or yields an invalid built-in object), so omit it
+  and name the case after what it mutates (assert the result via `.gold.yaml`).
 - `<type>` (input suffixes): `.request.yaml`, `.object.yaml`, `.oldObject.yaml`,
   `.namespaceObject.yaml`, `.params.yaml`, `.annotations.yaml`, `.warnings.txt`,
   `.authorizer.yaml`. Files sharing a base name are merged into one case.
@@ -109,7 +112,7 @@ kube-apiserver and etcd started by controller-runtime's envtest. The root
 controller-runtime.
 
 ```bash
-./hack/conformance.sh                 # every version in conformance/k8s-versions.txt, in parallel
+./hack/conformance.sh                 # every version in conformance/k8s-versions.json, in parallel
 ./hack/conformance.sh 1.37.x          # one version
 GOTESTFLAGS="-v -run TestConformance/test-policies-pass/mutating" ./hack/conformance.sh 1.37.x
 ```
@@ -122,7 +125,7 @@ GOTESTFLAGS="-v -run TestConformance/test-policies-pass/mutating" ./hack/conform
 - For every case in `test-policies-pass/` and `test-policies-fail/`, the harness
   sends the equivalent dry-run request (CONNECT: a real `pods/exec` POST) to the
   server and checks two layers:
-  1. `TestConformance/<suite>/<case>`: kat's raw evaluation result, on the very
+  1. `TestConformance/<suite>/<case>`: kat's raw evaluation result, on the
      inputs the server's CEL sees (server-defaulted object, stored `oldObject`,
      the server's `namespaceObject` and params, the impersonated identity,
      `request.dryRun`), must equal the server's decision, message, policy warnings,
@@ -138,28 +141,44 @@ GOTESTFLAGS="-v -run TestConformance/test-policies-pass/mutating" ./hack/conform
      failure); reproduce with `./kat <dir>`.
 - A server-side error that is not an admission decision (for example, the fixture
   object is invalid), or a fixture that kat cannot load, makes the case fail as
-  `inconclusive`. When kat decides the fixture as written
+  `inconclusive`. A mutating `InternalError` (for example a JSON patch result
+  that does not decode into the typed object) is a decision and is compared.
+  `ServiceUnavailable` (a CRD the type converter does not know yet) is retried
+  as transient. Invalid objects, AlreadyExists, and RBAC Forbidden stay
+  inconclusive. A CONNECT counts as admitted only when it then fails with the
+  BadRequest "does not have a host assigned". When kat decides the fixture as written
   differently than on the server-equivalent inputs, the case logs a note: the
   fixture does not describe what a real cluster would evaluate.
 - Cases are packed into shards so that no two cases in a shard need conflicting
-  server state (an object present vs absent, different namespace labels or params).
-  Each shard gets its own apiserver; suites run in parallel.
+  server state (an object present vs absent, different namespace labels or params,
+  different Allow authorizer mocks for one user). A shard tests one policy and
+  installs only that policy and its bindings. Each shard gets its own apiserver;
+  suites run in parallel. Probe policies wait until the policies, and the
+  informer of the policy's `paramKind`, are active.
+- Layer-1 gap: a mutating policy runs before the API server's
+  `PrepareForCreate`/`PrepareForUpdate`, and a validating one after. The harness
+  gives kat the dry-run result, the state after those steps, for both. A MAP
+  that reads fields those steps change (for example a Pod's `status`, or
+  `metadata.generation` on UPDATE) can differ for that reason alone.
 - Layer-2 gaps, covered by layer 1: `.annotations.yaml` ignores extra keys when it
   lists some, a CONNECT `.request.yaml` cannot carry the `PodExecOptions` object,
-  and inputs omit `managedFields`.
+  inputs omit `managedFields`, and cases whose policy the server rejects on
+  creation are not in the generated suite.
 
 **Known divergences.** When kat and the server differ and the fix is not a small kat
 change, add an entry to `conformance/known-divergences.yaml` with `suite`, optional
 `case`, optional `minVersion`/`maxVersion` (Kubernetes minors, inclusive), a `reason`
 and ideally an `issue` link. A listed case must fail; once it matches, the test fails
-with "unexpected pass" until the entry is removed. An entry that matches no case of a
-suite that ran also fails.
+with "unexpected pass" until the entry is removed. A listed case that is
+inconclusive still fails. An entry that matches no case of a suite that ran also
+fails.
 
 **Supported versions.** Kubernetes 1.36 and later (the first release serving both VAP
 and MAP as v1); a minor is dropped when it reaches upstream end of life. The harness
-fails fast on an older server. When a minor is released or dropped, update both
-`conformance/k8s-versions.txt` and the `conformance` job's `matrix.k8s` in
-`.github/workflows/ci.yml`, and the support statement in `README.md`.
+fails fast on an older server. When a minor is released or dropped, update
+`conformance/k8s-versions.json`, a JSON list of setup-envtest version selectors such
+as `"1.37.x"` (the CI conformance matrix is built from it), and the
+support statement in `README.md`.
 
 ## Conventions & gotchas
 
@@ -171,5 +190,15 @@ fails fast on an older server. When a minor is released or dropped, update both
 - A mutating policy that mutates the object **requires** a `.gold.yaml`, or the case
   fails with "policy mutated the object but no .gold.yaml file was provided".
 - Defining the same field in both `.request.yaml` and a split file is an error.
+- A policy with no binding is evaluated as if bound once (Deny and no params for
+  validating; an empty binding for mutating). A cluster ignores an unbound policy.
+- A `paramRef` selector, or a params object whose name differs from `paramRef.name`
+  or whose namespace is not `paramRef.namespace` (else the request's), fails the case.
+  `failurePolicy: Ignore` does not hide that.
+- An `object`/`oldObject` of a built-in kind with an unknown or wrongly typed field fails
+  the case: the server drops or rejects such fields before admission.
+- ApplyConfiguration on a kind absent from the embedded built-in schema uses a
+  schemaless merge (every list atomic). That matches a CRD without a structural
+  schema and differs from a CRD that has list-map keys.
 - Do not commit built binaries (e.g. `kat`, `kat-bin`); they are gitignored/temporary.
 - Never commit, push, or change dependencies without explicit maintainer approval.

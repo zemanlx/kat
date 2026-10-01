@@ -53,6 +53,37 @@ func TestNewForVersion(t *testing.T) {
 	}
 }
 
+// TestIncludesRejectedAtCreation checks that lists.includes, which is part of
+// the stored CEL libraries but not of the creation-time feature set for 1.36
+// or 1.37, is rejected when the policy is created.
+func TestIncludesRejectedAtCreation(t *testing.T) {
+	t.Parallel()
+
+	object := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata":   map[string]any{"name": "test-pod"},
+	}}
+	request := &admissionv1.AdmissionRequest{Operation: admissionv1.Create}
+	policy := validVAP(&admissionregv1.ValidatingAdmissionPolicy{Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+		Validations: []admissionregv1.Validation{{Expression: `["model"].includes("model")`}},
+	}})
+
+	for _, version := range []string{"1.36", "1.37"} {
+		e, err := NewForVersion(version)
+		if err != nil {
+			t.Fatalf("NewForVersion(%s) error = %v", version, err)
+		}
+
+		_, err = e.EvaluateValidating(policy, nil, request, object, nil, nil, nil, nil, nil)
+
+		invalid, ok := errors.AsType[*InvalidPolicyError](err)
+		if !ok || !strings.Contains(invalid.Error(), "includes") {
+			t.Errorf("version %s: error = %v, want InvalidPolicyError mentioning includes", version, err)
+		}
+	}
+}
+
 //nolint:gocognit,funlen,cyclop,maintidx // Test function
 func TestEvaluateMutating(t *testing.T) {
 	t.Parallel()
@@ -1850,8 +1881,8 @@ func TestEvaluateMutating_JSONPatchListOfObjects(t *testing.T) {
 
 	object := &unstructured.Unstructured{
 		Object: map[string]any{
-			"apiVersion": "apps/v1",
-			"kind":       "Deployment",
+			"apiVersion": "v1",
+			"kind":       "Pod",
 			"metadata":   map[string]any{"name": "web", "namespace": "default"},
 			"spec":       map[string]any{},
 		},
@@ -1876,6 +1907,47 @@ func TestEvaluateMutating_JSONPatchListOfObjects(t *testing.T) {
 
 	if len(constraints) != 1 {
 		t.Fatalf("expected 1 constraint, got %d", len(constraints))
+	}
+}
+
+// TestEvaluateMutating_InvalidInput checks that an input the API server would
+// not pass to admission as written is an input error, not a patch's
+// InternalError.
+func TestEvaluateMutating_InvalidInput(t *testing.T) {
+	t.Parallel()
+
+	e, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	policy := validMAP(makeMutatingPolicy(`[JSONPatch{op: "add", path: "/metadata/labels", value: {"a": "b"}}]`))
+	request := &admissionv1.AdmissionRequest{Operation: admissionv1.Create}
+
+	tests := []struct {
+		name    string
+		spec    map[string]any
+		wantErr string
+	}{
+		{name: "unknown field", spec: map[string]any{"bogus": "x"}, wantErr: `object has a field the API server drops before admission: strict decoding error: unknown field "spec.bogus"`},
+		{name: "wrong type", spec: map[string]any{"containers": "x"}, wantErr: "the API server would reject the object: json: cannot unmarshal string"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			object := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "v1", "kind": "Pod",
+				"metadata": map[string]any{"name": "test-pod"},
+				"spec":     tt.spec,
+			}}
+
+			_, err := e.EvaluateMutating(policy, nil, request, object, nil, nil, nil, nil, nil)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 

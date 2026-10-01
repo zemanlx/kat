@@ -11,9 +11,11 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
+	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -41,6 +43,18 @@ var (
 // notSyncedMessage marks a transient denial while a new paramKind informer
 // syncs; the request is retried.
 const notSyncedMessage = "not yet synced to use for admission"
+
+// noHostMessage is the BadRequest a pods/exec request gets after admission
+// when the pod is not scheduled. Any other CONNECT error may come from before
+// admission (RBAC, a missing pod) and is not a decision.
+const noHostMessage = "does not have a host assigned"
+
+// transient reports a request error the server returns while it catches up:
+// a paramKind informer that has not synced, or a ServiceUnavailable such as
+// the mutating plugin's "Resource kind ... not found" for a new CRD.
+func transient(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), notSyncedMessage) || apierrors.IsServiceUnavailable(err))
+}
 
 // serverResult is the server's decision for one case.
 type serverResult struct {
@@ -118,8 +132,14 @@ func (h *shardRun) execute(ctx context.Context, c *katCase) {
 		capt := &capture{}
 		obj, err := h.send(ctx, c, capt)
 
-		if err != nil && strings.Contains(err.Error(), notSyncedMessage) && attempt < retries {
-			time.Sleep(backoff)
+		if transient(err) && attempt < retries {
+			select {
+			case <-ctx.Done():
+				c.inconclusivef("%v", ctx.Err())
+
+				return
+			case <-time.After(backoff):
+			}
 
 			continue
 		}
@@ -187,31 +207,47 @@ func (h *shardRun) record(ctx context.Context, c *katCase, capt *capture, obj *u
 	if reqErr == nil {
 		res.allowed = true
 		res.object = obj
-	} else {
-		var status apierrors.APIStatus
-		if !errors.As(reqErr, &status) {
-			return fmt.Errorf("request failed: %w", reqErr)
-		}
-
-		m := denialPattern.FindStringSubmatch(status.Status().Message)
-
-		switch {
-		case m != nil && (m[1] != c.policyName || !slices.Contains(c.bindingNames, m[2])):
-			return fmt.Errorf("denied by policy %q binding %q, not the policy under test: %w", m[1], m[2], reqErr)
-		case m != nil:
-			res.message, res.binding, res.reason = m[3], m[2], status.Status().Reason
-		case c.op == admissionv1.Connect:
-			res.allowed = true
-
-			c.notef("CONNECT passed admission and then failed as expected: %v", reqErr)
-		default:
-			return fmt.Errorf("the server returned an error that is not an admission policy decision: %w", reqErr)
-		}
+	} else if err := recordError(c, reqErr); err != nil {
+		return err
 	}
 
 	res.warnings = c.policyWarnings(capt.warnings)
 
 	return h.recordAudit(ctx, c, capt)
+}
+
+// recordError records a request error that is an admission decision, or
+// returns why it is not one.
+func recordError(c *katCase, reqErr error) error {
+	res := &c.run.server
+
+	var status apierrors.APIStatus
+	if !errors.As(reqErr, &status) {
+		return fmt.Errorf("request failed: %w", reqErr)
+	}
+
+	st := status.Status()
+	m := denialPattern.FindStringSubmatch(st.Message)
+
+	switch {
+	case m != nil && (m[1] != c.policyName || !slices.Contains(c.bindingNames, m[2])):
+		return fmt.Errorf("denied by policy %q binding %q, not the policy under test: %w", m[1], m[2], reqErr)
+	case m != nil:
+		res.message, res.binding, res.reason = m[3], m[2], st.Reason
+	case mutatingAdmissionStatus(c, st):
+		// The mutating dispatcher returns some patch failures as a
+		// StatusError, not "policy ... denied request". kat records the
+		// same message and reason, with an empty binding.
+		res.allowed, res.message, res.reason = false, st.Message, st.Reason
+	case connectAdmitted(c, st):
+		res.allowed = true
+
+		c.notef("CONNECT passed admission and then failed as expected: %v", reqErr)
+	default:
+		return fmt.Errorf("the server returned an error that is not an admission policy decision: %w", reqErr)
+	}
+
+	return nil
 }
 
 // policyWarnings keeps the Warn action warnings of the policy under test,
@@ -231,6 +267,49 @@ func (c *katCase) policyWarnings(warnings []string) []string {
 	}
 
 	return out
+}
+
+// connectAdmitted reports a CONNECT that passed admission and then failed
+// because the pod has no node.
+func connectAdmitted(c *katCase, st metav1.Status) bool {
+	return c.op == admissionv1.Connect && st.Reason == metav1.StatusReasonBadRequest && strings.Contains(st.Message, noHostMessage)
+}
+
+// mutatingAdmissionStatus reports an InternalError the mutating admission
+// plugin returns directly, such as a JSON patch result that does not decode
+// into the typed object. The error does not name its policy; a shard installs
+// only the policy under test. ServiceUnavailable is transient, and invalid
+// objects, AlreadyExists and RBAC Forbidden are not policy decisions; those
+// stay inconclusive.
+func mutatingAdmissionStatus(c *katCase, st metav1.Status) bool {
+	return c.policies.Mutating != nil && st.Reason == metav1.StatusReasonInternalError
+}
+
+func TestMutatingAdmissionStatus(t *testing.T) {
+	t.Parallel()
+
+	mutating := &katCase{policies: evaluator.Policies{Mutating: &admissionregv1.MutatingAdmissionPolicy{}}}
+	validating := &katCase{policies: evaluator.Policies{Validating: &admissionregv1.ValidatingAdmissionPolicy{}}}
+	internal := metav1.Status{Reason: metav1.StatusReasonInternalError}
+
+	if !mutatingAdmissionStatus(mutating, internal) {
+		t.Error("internal error on a mutating policy should be a decision")
+	}
+
+	if mutatingAdmissionStatus(validating, internal) {
+		t.Error("validating policies wrap decisions in the denial message")
+	}
+
+	for _, reason := range []metav1.StatusReason{
+		metav1.StatusReasonServiceUnavailable,
+		metav1.StatusReasonInvalid,
+		metav1.StatusReasonAlreadyExists,
+		metav1.StatusReasonForbidden,
+	} {
+		if mutatingAdmissionStatus(mutating, metav1.Status{Reason: reason}) {
+			t.Errorf("%s should stay inconclusive", reason)
+		}
+	}
 }
 
 // recordAudit reads the policy's audit annotations back from the audit log,

@@ -135,28 +135,29 @@ func defaultMatchResources(mr *admissionregv1.MatchResources) {
 // validateValidatingPolicy is the server's ValidateValidatingAdmissionPolicy.
 func (e *Evaluator) validateValidatingPolicy(p *admissionregv1.ValidatingAdmissionPolicy) error {
 	errs := genericvalidation.ValidateObjectMeta(&p.ObjectMeta, false, genericvalidation.NameIsDNSSubdomain, field.NewPath("metadata"))
-	errs = append(errs, e.validateValidatingPolicySpec(p.ObjectMeta, &p.Spec, field.NewPath("spec"))...)
+
+	specErrs, err := e.validateValidatingPolicySpec(p.ObjectMeta, &p.Spec, field.NewPath("spec"))
+	if err != nil {
+		return err
+	}
+
+	errs = append(errs, specErrs...)
 
 	return invalid("ValidatingAdmissionPolicy", p.Name, errs)
 }
 
-//nolint:cyclop,funlen // Mirrors the server's validation function.
+//nolint:cyclop // Mirrors the server's validation function.
 func (e *Evaluator) validateValidatingPolicySpec(
 	meta metav1.ObjectMeta,
 	spec *admissionregv1.ValidatingAdmissionPolicySpec,
 	fldPath *field.Path,
-) field.ErrorList {
+) (field.ErrorList, error) {
 	var errs field.ErrorList
 
 	// The composited compiler is stateful, so each policy gets its own.
-	var compiler plugincel.Compiler
-
-	getCompiler := func() plugincel.Compiler {
-		if compiler == nil {
-			compiler = e.policyCompiler(len(spec.Variables) > 0)
-		}
-
-		return compiler
+	compiler, err := e.policyCompiler(len(spec.Variables) > 0)
+	if err != nil {
+		return nil, err
 	}
 
 	errs = append(errs, validateFailurePolicy(spec.FailurePolicy, fldPath.Child("failurePolicy"))...)
@@ -170,7 +171,7 @@ func (e *Evaluator) validateValidatingPolicySpec(
 	errs = append(errs, e.validateMatchConditions(spec.MatchConditions, allowParamsInMatchConditions, fldPath.Child("matchConditions"))...)
 
 	for i := range spec.Variables {
-		errs = append(errs, validateVariable(getCompiler(), &spec.Variables[i], spec.ParamKind, fldPath.Child("variables").Index(i))...)
+		errs = append(errs, validateVariable(compiler, &spec.Variables[i], spec.ParamKind, fldPath.Child("variables").Index(i))...)
 	}
 
 	if len(spec.Validations) == 0 && len(spec.AuditAnnotations) == 0 {
@@ -179,11 +180,11 @@ func (e *Evaluator) validateValidatingPolicySpec(
 			field.Required(fldPath.Child("auditAnnotations"), "validations or auditAnnotations must contain at least one item"),
 		)
 
-		return errs
+		return errs, nil
 	}
 
 	for i := range spec.Validations {
-		errs = append(errs, validateValidation(getCompiler(), &spec.Validations[i], spec.ParamKind, allowParamsInMatchConditions, fldPath.Child("validations").Index(i))...)
+		errs = append(errs, validateValidation(compiler, &spec.Validations[i], spec.ParamKind, allowParamsInMatchConditions, fldPath.Child("validations").Index(i))...)
 	}
 
 	if spec.AuditAnnotations != nil {
@@ -196,7 +197,7 @@ func (e *Evaluator) validateValidatingPolicySpec(
 
 		for i := range spec.AuditAnnotations {
 			a := &spec.AuditAnnotations[i]
-			errs = append(errs, validateAuditAnnotation(getCompiler(), meta, a, spec.ParamKind, fldPath.Child("auditAnnotations").Index(i))...)
+			errs = append(errs, validateAuditAnnotation(compiler, meta, a, spec.ParamKind, fldPath.Child("auditAnnotations").Index(i))...)
 
 			if keys.Has(a.Key) {
 				errs = append(errs, field.Duplicate(fldPath.Child("auditAnnotations").Index(i).Child("key"), a.Key))
@@ -206,21 +207,30 @@ func (e *Evaluator) validateValidatingPolicySpec(
 		}
 	}
 
-	return errs
+	return errs, nil
 }
 
 // validateMutatingPolicy is the server's ValidateMutatingAdmissionPolicy.
 func (e *Evaluator) validateMutatingPolicy(p *admissionregv1.MutatingAdmissionPolicy) error {
 	errs := genericvalidation.ValidateObjectMeta(&p.ObjectMeta, false, genericvalidation.NameIsDNSSubdomain, field.NewPath("metadata"))
-	errs = append(errs, e.validateMutatingPolicySpec(&p.Spec, field.NewPath("spec"))...)
+
+	specErrs, err := e.validateMutatingPolicySpec(&p.Spec, field.NewPath("spec"))
+	if err != nil {
+		return err
+	}
+
+	errs = append(errs, specErrs...)
 
 	return invalid("MutatingAdmissionPolicy", p.Name, errs)
 }
 
-func (e *Evaluator) validateMutatingPolicySpec(spec *admissionregv1.MutatingAdmissionPolicySpec, fldPath *field.Path) field.ErrorList {
+func (e *Evaluator) validateMutatingPolicySpec(spec *admissionregv1.MutatingAdmissionPolicySpec, fldPath *field.Path) (field.ErrorList, error) {
 	var errs field.ErrorList
 
-	compiler := e.policyCompiler(true)
+	compiler, err := e.policyCompiler(true)
+	if err != nil {
+		return nil, err
+	}
 
 	errs = append(errs, validateFailurePolicy(spec.FailurePolicy, fldPath.Child("failurePolicy"))...)
 
@@ -250,7 +260,7 @@ func (e *Evaluator) validateMutatingPolicySpec(spec *admissionregv1.MutatingAdmi
 		errs = append(errs, field.NotSupported(fldPath.Child("reinvocationPolicy"), spec.ReinvocationPolicy, sets.List(supportedReinvocationPolicies)))
 	}
 
-	return errs
+	return errs, nil
 }
 
 // validateValidatingBinding is the server's ValidateValidatingAdmissionPolicyBinding.

@@ -220,6 +220,9 @@ func (s *server) findAuditEvent(auditID string) (*auditEvent, error) {
 		return nil, fmt.Errorf("read audit log: %w", err)
 	}
 
+	// The last line may still be being written; read it on the next poll.
+	data = data[:bytes.LastIndexByte(data, '\n')+1]
+
 	needle := []byte(`"auditID":"` + auditID + `"`)
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 1<<20), 1<<24)

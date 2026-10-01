@@ -312,10 +312,3 @@ func serverIdentity(info user.Info) *user.DefaultInfo {
 func isMaster(u user.Info) bool {
 	return slices.Contains(u.GetGroups(), user.SystemPrivilegedGroup)
 }
-
-type mockConfig = evaluator.AuthorizationMockConfig
-
-// authorizerMocks returns the case's .authorizer.yaml entries.
-func (c *katCase) authorizerMocks() []mockConfig {
-	return c.tc.Authorizer
-}

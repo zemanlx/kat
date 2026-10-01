@@ -16,6 +16,12 @@ import (
 // probeName names the harness's readiness probe policies, bindings and Lease.
 const probeName = "kat-probe"
 
+// paramsProbeName names the probe for the shard policy's paramKind informer.
+const paramsProbeName = probeName + "-params"
+
+// paramsProbeLabels select the params probe's Lease.
+var paramsProbeLabels = map[string]string{paramsProbeName: "true"} //nolint:gochecknoglobals // Constant.
+
 // probeReady is the probe VAP's denial once the probe MAP has mutated the
 // probe Lease.
 const probeReady = "ValidatingAdmissionPolicy '" + probeName + "' with binding '" + probeName +
@@ -23,41 +29,50 @@ const probeReady = "ValidatingAdmissionPolicy '" + probeName + "' with binding '
 
 var errProbeNotReady = errors.New("admission policies did not become active")
 
-// installPolicies creates the suite's policies and bindings. A policy or
+// installPolicies creates the shard's policy and its bindings. A policy or
 // binding the server rejects is recorded on the cases that use it.
 func (h *shardRun) installPolicies(ctx context.Context) {
 	api := h.srv.client.AdmissionregistrationV1()
 	create := metav1.CreateOptions{}
+	name := h.shard.policy
 
 	for _, p := range h.suite.MutatingPolicies {
-		_, err := api.MutatingAdmissionPolicies().Create(ctx, clean(p), create)
-		h.rejected(p.Name, err)
+		if p.Name == name {
+			_, err := api.MutatingAdmissionPolicies().Create(ctx, clean(p), create)
+			h.rejected(err)
+		}
 	}
 
 	for _, b := range h.suite.MutatingBindings {
-		_, err := api.MutatingAdmissionPolicyBindings().Create(ctx, clean(b), create)
-		h.rejected(b.Spec.PolicyName, err)
+		if b.Spec.PolicyName == name {
+			_, err := api.MutatingAdmissionPolicyBindings().Create(ctx, clean(b), create)
+			h.rejected(err)
+		}
 	}
 
 	for _, p := range h.suite.ValidatingPolicies {
-		_, err := api.ValidatingAdmissionPolicies().Create(ctx, clean(p), create)
-		h.rejected(p.Name, err)
+		if p.Name == name {
+			_, err := api.ValidatingAdmissionPolicies().Create(ctx, clean(p), create)
+			h.rejected(err)
+		}
 	}
 
 	for _, b := range h.suite.ValidatingBindings {
-		_, err := api.ValidatingAdmissionPolicyBindings().Create(ctx, clean(b), create)
-		h.rejected(b.Spec.PolicyName, err)
+		if b.Spec.PolicyName == name {
+			_, err := api.ValidatingAdmissionPolicyBindings().Create(ctx, clean(b), create)
+			h.rejected(err)
+		}
 	}
 }
 
-// rejected records the first error of a policy's creation on its cases.
-func (h *shardRun) rejected(policyName string, err error) {
+// rejected records the first error of the policy's creation on its cases.
+func (h *shardRun) rejected(err error) {
 	if err == nil {
 		return
 	}
 
 	for _, c := range h.shard.cases {
-		if c.policyName == policyName && c.run.server.policyErr == "" {
+		if c.run.server.policyErr == "" {
 			c.run.server.policyErr = err.Error()
 		}
 	}
@@ -90,6 +105,11 @@ func (h *shardRun) installProbe(ctx context.Context) error {
 	}
 	conditions := []admissionregv1.MatchCondition{{Name: probeName, Expression: "object.metadata.name == '" + probeName + "'"}}
 	meta := metav1.ObjectMeta{Name: probeName}
+
+	// Before the main probe, so that once it is active this one is too.
+	if err := h.installParamsProbe(ctx, match); err != nil {
+		return err
+	}
 
 	mutating := &admissionregv1.MutatingAdmissionPolicy{ObjectMeta: meta, Spec: admissionregv1.MutatingAdmissionPolicySpec{
 		MatchConstraints: match, MatchConditions: conditions, FailurePolicy: &fail, ReinvocationPolicy: never,
@@ -133,15 +153,103 @@ func (h *shardRun) installProbe(ctx context.Context) error {
 	return nil
 }
 
+// paramsKind is the shard policy's paramKind, and whether the policy is
+// mutating; nil when it has none.
+func (h *shardRun) paramsKind() (*admissionregv1.ParamKind, bool) {
+	c := h.shard.cases[0]
+
+	return c.paramKind(), c.policies.Mutating != nil
+}
+
+// installParamsProbe creates, when the shard's policy has a paramKind, a probe
+// policy of the same plugin and paramKind whose binding references missing
+// params under Deny. Its request fails with notSyncedMessage until the
+// plugin's informer for that kind has synced, and then with another error
+// (params not found, or the kind is not served). Without it, a policy under
+// failurePolicy: Ignore would be skipped while the informer syncs.
+func (h *shardRun) installParamsProbe(ctx context.Context, match *admissionregv1.MatchResources) error {
+	kind, mutating := h.paramsKind()
+	if kind == nil {
+		return nil
+	}
+
+	api := h.srv.client.AdmissionregistrationV1()
+	never := admissionregv1.NeverReinvocationPolicy
+	fail := admissionregv1.Fail
+	deny := admissionregv1.DenyAction
+	meta := metav1.ObjectMeta{Name: paramsProbeName}
+	ref := &admissionregv1.ParamRef{Name: probeName + "-missing", ParameterNotFoundAction: &deny}
+
+	// The server collects params before it evaluates match conditions, so
+	// only an object selector keeps this probe off the main probe's Lease.
+	match = match.DeepCopy()
+	match.ObjectSelector = &metav1.LabelSelector{MatchLabels: paramsProbeLabels}
+
+	var conditions []admissionregv1.MatchCondition
+
+	if mutating {
+		if _, err := api.MutatingAdmissionPolicies().Create(ctx, &admissionregv1.MutatingAdmissionPolicy{ObjectMeta: meta, Spec: admissionregv1.MutatingAdmissionPolicySpec{
+			ParamKind: kind, MatchConstraints: match, MatchConditions: conditions, FailurePolicy: &fail, ReinvocationPolicy: never,
+			Mutations: []admissionregv1.Mutation{{
+				PatchType:          admissionregv1.PatchTypeApplyConfiguration,
+				ApplyConfiguration: &admissionregv1.ApplyConfiguration{Expression: `Object{}`},
+			}},
+		}}, metav1.CreateOptions{}); err != nil {
+			return fmt.Errorf("create params probe MutatingAdmissionPolicy: %w", err)
+		}
+
+		if _, err := api.MutatingAdmissionPolicyBindings().Create(ctx, &admissionregv1.MutatingAdmissionPolicyBinding{
+			ObjectMeta: meta, Spec: admissionregv1.MutatingAdmissionPolicyBindingSpec{PolicyName: paramsProbeName, ParamRef: ref},
+		}, metav1.CreateOptions{}); err != nil {
+			return fmt.Errorf("create params probe MutatingAdmissionPolicyBinding: %w", err)
+		}
+
+		return nil
+	}
+
+	if _, err := api.ValidatingAdmissionPolicies().Create(ctx, &admissionregv1.ValidatingAdmissionPolicy{ObjectMeta: meta, Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+		ParamKind: kind, MatchConstraints: match, MatchConditions: conditions, FailurePolicy: &fail,
+		Validations: []admissionregv1.Validation{{Expression: "true"}},
+	}}, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create params probe ValidatingAdmissionPolicy: %w", err)
+	}
+
+	if _, err := api.ValidatingAdmissionPolicyBindings().Create(ctx, &admissionregv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: meta, Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+			PolicyName: paramsProbeName, ParamRef: ref, ValidationActions: []admissionregv1.ValidationAction{admissionregv1.Deny},
+		},
+	}, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create params probe ValidatingAdmissionPolicyBinding: %w", err)
+	}
+
+	return nil
+}
+
 // waitProbe polls a dry-run create of the probe Lease until both probe
-// policies act on it.
+// policies act on it, and then the params probe until its informer synced.
 func (h *shardRun) waitProbe(ctx context.Context) error {
+	probe := &coordinationv1.Lease{Name: probeName, Namespace: probeNamespace}
+	if err := h.waitLease(ctx, probe, func(msg string) bool { return strings.Contains(msg, probeReady) }); err != nil {
+		return err
+	}
+
+	if kind, _ := h.paramsKind(); kind == nil {
+		return nil
+	}
+
+	params := &coordinationv1.Lease{Name: paramsProbeName, Namespace: probeNamespace, Labels: paramsProbeLabels}
+
+	return h.waitLease(ctx, params, func(msg string) bool { return !strings.Contains(msg, notSyncedMessage) })
+}
+
+// waitLease polls a dry-run create of the probe Lease until it fails with an
+// error message for which done is true.
+func (h *shardRun) waitLease(ctx context.Context, lease *coordinationv1.Lease, done func(msg string) bool) error {
 	const (
 		interval = 100 * time.Millisecond
 		timeout  = 60 * time.Second
 	)
 
-	lease := &coordinationv1.Lease{Name: probeName, Namespace: probeNamespace}
 	last := ""
 
 	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
@@ -154,10 +262,10 @@ func (h *shardRun) waitProbe(ctx context.Context) error {
 
 		last = err.Error()
 
-		return strings.Contains(last, probeReady), nil
+		return done(last), nil
 	})
 	if err != nil {
-		return fmt.Errorf("%w: last probe response: %s: %w", errProbeNotReady, last, err)
+		return fmt.Errorf("%w: probe %s: last response: %s: %w", errProbeNotReady, lease.Name, last, err)
 	}
 
 	return nil

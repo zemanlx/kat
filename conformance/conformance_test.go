@@ -258,18 +258,7 @@ func report(t *testing.T, c *katCase, entry *divergence) {
 	}
 
 	if entry != nil {
-		if len(layer1)+len(layer2) == 0 {
-			t.Errorf("unexpected pass: %s is listed in known-divergences.yaml (%s) but now matches the kube-apiserver; remove the entry",
-				c.id(), entry.Reason)
-
-			return
-		}
-
-		t.Logf("known divergence: %s %s", entry.Reason, entry.Issue)
-
-		for _, f := range append(layer1, layer2...) {
-			t.Log(f)
-		}
+		reportKnown(t, c, entry, append(layer1, layer2...))
 
 		return
 	}
@@ -284,5 +273,27 @@ func report(t *testing.T, c *katCase, entry *divergence) {
 				t.Error(f)
 			}
 		})
+	}
+}
+
+// reportKnown reports a case listed in known-divergences.yaml: it must still
+// diverge, and an inconclusive case says nothing about the divergence.
+func reportKnown(t *testing.T, c *katCase, entry *divergence, failures []string) {
+	t.Helper()
+
+	switch {
+	case c.isInconclusive():
+		for _, f := range failures {
+			t.Errorf("%s is listed in known-divergences.yaml, but the case is %s", c.id(), f)
+		}
+	case len(failures) == 0:
+		t.Errorf("unexpected pass: %s is listed in known-divergences.yaml (%s) but now matches the kube-apiserver; remove the entry",
+			c.id(), entry.Reason)
+	default:
+		t.Logf("known divergence: %s %s", entry.Reason, entry.Issue)
+
+		for _, f := range failures {
+			t.Log(f)
+		}
 	}
 }

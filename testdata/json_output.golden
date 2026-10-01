@@ -18,6 +18,16 @@
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"image-mapper","test":"image-mapper.multi-container.yaml"}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"image-mapper","test":"image-mapper.multi-container.yaml","elapsed":0}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"image-mapper","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"jsonpatch-errors"}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"jsonpatch-errors","test":"jsonpatch-errors.remove-missing.deny.yaml"}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"jsonpatch-errors","test":"jsonpatch-errors.remove-missing.deny.yaml","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"jsonpatch-errors","test":"jsonpatch-errors.unknown-field.deny.yaml"}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"jsonpatch-errors","test":"jsonpatch-errors.unknown-field.deny.yaml","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"jsonpatch-errors","test":"jsonpatch-errors.valid-patch.yaml"}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"jsonpatch-errors","test":"jsonpatch-errors.valid-patch.yaml","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"run","package":"jsonpatch-errors","test":"jsonpatch-errors.wrong-type.deny.yaml"}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"jsonpatch-errors","test":"jsonpatch-errors.wrong-type.deny.yaml","elapsed":0}
+{"time":"2000-01-01T00:00:00Z","action":"pass","package":"jsonpatch-errors","elapsed":0}
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"mutating-with-binding"}
 {"time":"2000-01-01T00:00:00Z","action":"run","package":"mutating-with-binding","test":"add-label.all-in-one.allowed.yaml"}
 {"time":"2000-01-01T00:00:00Z","action":"pass","package":"mutating-with-binding","test":"add-label.all-in-one.allowed.yaml","elapsed":0}

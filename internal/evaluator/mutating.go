@@ -83,7 +83,7 @@ func compilePatchers(
 		switch {
 		case mutation.PatchType == admissionregv1.PatchTypeJSONPatch && mutation.JSONPatch != nil:
 			accessor := &patch.JSONPatchCondition{Expression: mutation.JSONPatch.Expression}
-			patchers = append(patchers, patch.NewJSONPatcher(compiler.CompileMutatingEvaluator(accessor, opts, environment.StoredExpressions)))
+			patchers = append(patchers, typedJSONPatcher{patch.NewJSONPatcher(compiler.CompileMutatingEvaluator(accessor, opts, environment.StoredExpressions))})
 		case mutation.PatchType == admissionregv1.PatchTypeApplyConfiguration && mutation.ApplyConfiguration != nil:
 			accessor := &patch.ApplyConfigurationCondition{Expression: mutation.ApplyConfiguration.Expression}
 			patchers = append(patchers, patch.NewApplyConfigurationPatcher(compiler.CompileMutatingEvaluator(accessor, opts, environment.StoredExpressions)))
@@ -91,6 +91,33 @@ func compilePatchers(
 	}
 
 	return patchers
+}
+
+// typedJSONPatcher is a JSON patcher whose result for a built-in kind must
+// decode strictly into the typed object, as on the API server, which patches
+// typed objects. kat patches unstructured ones, which accept any field.
+type typedJSONPatcher struct {
+	patch.Patcher
+}
+
+func (p typedJSONPatcher) Patch(ctx context.Context, r patch.Request, runtimeCELCostBudget int64) (runtime.Object, error) {
+	patched, err := p.Patcher.Patch(ctx, r, runtimeCELCostBudget)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // The server's error, unchanged.
+	}
+
+	// A failed "test" operation returns the object unpatched, and the server
+	// does not decode it.
+	u, ok := patched.(*unstructured.Unstructured)
+	if !ok || patched == r.VersionedAttributes.VersionedObject.Object() {
+		return patched, nil
+	}
+
+	if err := decodeTyped(u); err != nil {
+		return nil, apierrors.NewInternalError(err)
+	}
+
+	return patched, nil
 }
 
 // policyError is the API server's generic.PolicyError for one binding.
@@ -105,6 +132,7 @@ type invocation struct {
 	params  runtime.Object
 }
 
+//nolint:cyclop // The fatal params error is an extra branch the server answers by listing.
 func (e *Evaluator) evaluateMutating(
 	ctx context.Context,
 	policy *admissionregv1.MutatingAdmissionPolicy,
@@ -116,7 +144,11 @@ func (e *Evaluator) evaluateMutating(
 		return nil, err
 	}
 
-	invocations, errs := mutatingInvocations(policy, bindings, req)
+	invocations, errs, err := mutatingInvocations(policy, bindings, req)
+	if err != nil {
+		return nil, err
+	}
+
 	original := req.attr.VersionedObject.Object()
 	ignore := failurePolicy(policy.Spec.FailurePolicy) == admissionregv1.Ignore
 
@@ -168,7 +200,7 @@ func mutatingInvocations(
 	policy *admissionregv1.MutatingAdmissionPolicy,
 	bindings []*admissionregv1.MutatingAdmissionPolicyBinding,
 	req *request,
-) ([]invocation, []policyError) {
+) ([]invocation, []policyError, error) {
 	var (
 		invocations []invocation
 		errs        []policyError
@@ -179,10 +211,14 @@ func mutatingInvocations(
 		if err == nil && applies {
 			var params []runtime.Object
 
-			params, err = collectParams(policy.Spec.ParamKind, binding.Spec.ParamRef, req.params)
+			params, err = collectParams(policy.Spec.ParamKind, binding.Spec.ParamRef, req.params, req.attr.GetNamespace())
 			for _, p := range params {
 				invocations = append(invocations, invocation{binding.Name, p})
 			}
+		}
+
+		if fatalParamsErr(err) {
+			return nil, nil, err
 		}
 
 		if err != nil {
@@ -190,7 +226,7 @@ func mutatingInvocations(
 		}
 	}
 
-	return invocations, errs
+	return invocations, errs, nil
 }
 
 // dispatch is one pass of the API server's mutating dispatcher over the
