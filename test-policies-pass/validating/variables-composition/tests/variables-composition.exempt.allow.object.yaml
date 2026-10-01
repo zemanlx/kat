@@ -1,0 +1,13 @@
+# A multi-container Pod without the label, skipped by the matchCondition.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: exempt
+  labels:
+    policy.example.com/exempt: "true"
+spec:
+  containers:
+  - name: app
+    image: nginx
+  - name: sidecar
+    image: envoy

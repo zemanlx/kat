@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -8,11 +9,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	plugincel "k8s.io/apiserver/pkg/admission/plugin/cel"
 	"k8s.io/apiserver/pkg/authentication/user"
+	"k8s.io/apiserver/pkg/cel/environment"
 )
 
 func TestNew(t *testing.T) {
@@ -23,21 +24,62 @@ func TestNew(t *testing.T) {
 		t.Fatalf("New() error = %v, want nil", err)
 	}
 
-	if evaluator == nil {
-		t.Fatal("New() returned nil evaluator")
-	}
+	opts := plugincel.OptionalVariableDeclarations{HasParams: true, HasAuthorizer: true}
 
-	if evaluator.env == nil {
-		t.Fatal("New() evaluator has nil env")
-	}
-
-	// Libraries k8s 1.28+ / 1.32+ register that kat used to omit.
-	for _, expr := range []string{
-		`object.?metadata.?labels.orValue({})`,
-		`object.metadata.labels.transformMap(k, v, k != "foo", v)`,
+	for expr, wantErr := range map[string]bool{
+		`object.?metadata.?labels.orValue({})`:                         false,
+		`object.metadata.labels.transformMap(k, v, k != "foo", v)`:     false,
+		`authorizer.group("").resource("pods").check("get").allowed()`: false,
+		// The API server does not register the math and encoders extensions.
+		`math.greatest(1, 2) == 2`:      true,
+		`base64.encode(b"a") == "YQ=="`: true,
 	} {
-		if _, iss := evaluator.env.Compile(expr); iss != nil {
-			t.Errorf("compile %q: %v", expr, iss)
+		result := evaluator.statelessCompiler.CompileCELExpression(&typedExpression{expression: expr, returnTypes: anyType}, opts, environment.NewExpressions)
+		if (result.Error != nil) != wantErr {
+			t.Errorf("compile %q: error = %v, wantErr %v", expr, result.Error, wantErr)
+		}
+	}
+}
+
+func TestNewForVersion(t *testing.T) {
+	t.Parallel()
+
+	for version, wantErr := range map[string]bool{
+		"1.35": true, "1.36": false, "1.37": false, "1.38": true, "2.0": true, "latest": true,
+	} {
+		if _, err := NewForVersion(version); (err != nil) != wantErr {
+			t.Errorf("NewForVersion(%q) error = %v, wantErr %v", version, err, wantErr)
+		}
+	}
+}
+
+// TestIncludesRejectedAtCreation checks that lists.includes, which is part of
+// the stored CEL libraries but not of the creation-time feature set for 1.36
+// or 1.37, is rejected when the policy is created.
+func TestIncludesRejectedAtCreation(t *testing.T) {
+	t.Parallel()
+
+	object := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata":   map[string]any{"name": "test-pod"},
+	}}
+	request := &admissionv1.AdmissionRequest{Operation: admissionv1.Create}
+	policy := validVAP(&admissionregv1.ValidatingAdmissionPolicy{Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+		Validations: []admissionregv1.Validation{{Expression: `["model"].includes("model")`}},
+	}})
+
+	for _, version := range []string{"1.36", "1.37"} {
+		e, err := NewForVersion(version)
+		if err != nil {
+			t.Fatalf("NewForVersion(%s) error = %v", version, err)
+		}
+
+		_, err = e.EvaluateValidating(policy, nil, request, object, nil, nil, nil, nil, nil)
+
+		invalid, ok := errors.AsType[*InvalidPolicyError](err)
+		if !ok || !strings.Contains(invalid.Error(), "includes") {
+			t.Errorf("version %s: error = %v, want InvalidPolicyError mentioning includes", version, err)
 		}
 	}
 }
@@ -453,7 +495,7 @@ func TestEvaluateMutating(t *testing.T) {
 						{
 							PatchType: admissionregv1.PatchTypeApplyConfiguration,
 							ApplyConfiguration: &admissionregv1.ApplyConfiguration{
-								Expression: `Object{metadata: {"labels": {"managed-by": "kat", "env": "prod"}}}`,
+								Expression: `Object{metadata: Object.metadata{labels: {"managed-by": "kat", "env": "prod"}}}`,
 							},
 						},
 					},
@@ -545,7 +587,7 @@ func TestEvaluateMutating(t *testing.T) {
 							PatchType: admissionregv1.PatchTypeJSONPatch,
 							JSONPatch: &admissionregv1.JSONPatch{
 								// Adding a complex container with nested env vars
-								Expression: `[JSONPatch{op: "add", path: "/spec/containers", value: [{"name": "nginx", "image": "nginx:latest", "env": [{"name": "ENV", "value": "prod"}], "ports": [{"containerPort": 80}]}]}]`,
+								Expression: `[JSONPatch{op: "add", path: "/spec/containers", value: [Object.spec.containers{name: "nginx", image: "nginx:latest", env: [Object.spec.containers.env{name: "ENV", value: "prod"}], ports: [Object.spec.containers.ports{containerPort: 80}]}]}]`,
 							},
 						},
 					},
@@ -640,7 +682,7 @@ func TestEvaluateMutating(t *testing.T) {
 							PatchType: admissionregv1.PatchTypeApplyConfiguration,
 							ApplyConfiguration: &admissionregv1.ApplyConfiguration{
 								// Complex nested structure with arrays and objects
-								Expression: `Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{containers: [{"name": "sidecar", "image": "sidecar:v1", "env": [{"name": "MODE", "value": "inject"}]}]}}}}`,
+								Expression: `Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{containers: [Object.spec.template.spec.containers{name: "sidecar", image: "sidecar:v1", env: [Object.spec.template.spec.containers.env{name: "MODE", value: "inject"}]}]}}}}`,
 							},
 						},
 					},
@@ -683,7 +725,7 @@ func TestEvaluateMutating(t *testing.T) {
 							PatchType: admissionregv1.PatchTypeApplyConfiguration,
 							ApplyConfiguration: &admissionregv1.ApplyConfiguration{
 								// Add volumes array with complex nested structure
-								Expression: `Object{spec: {"volumes": [{"name": "config", "configMap": {"name": "app-config", "items": [{"key": "config.yaml", "path": "config.yaml"}]}}]}}`,
+								Expression: `Object{spec: Object.spec{volumes: [Object.spec.volumes{name: "config", configMap: Object.spec.volumes.configMap{name: "app-config"}}]}}`,
 							},
 						},
 					},
@@ -726,12 +768,6 @@ func TestEvaluateMutating(t *testing.T) {
 								"name": "config",
 								"configMap": map[string]any{
 									"name": "app-config",
-									"items": []any{
-										map[string]any{
-											"key":  "config.yaml",
-											"path": "config.yaml",
-										},
-									},
 								},
 							},
 						},
@@ -751,7 +787,7 @@ func TestEvaluateMutating(t *testing.T) {
 								// Multiple patches in one mutation with nested values
 								Expression: `[
 									JSONPatch{op: "add", path: "/metadata/labels", value: {"tier": "backend", "version": "v1"}},
-									JSONPatch{op: "add", path: "/spec/strategy", value: {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": 0}}}
+									JSONPatch{op: "add", path: "/spec/strategy", value: Object.spec.strategy{type: "RollingUpdate", rollingUpdate: Object.spec.strategy.rollingUpdate{maxSurge: "25%", maxUnavailable: 0}}}
 								]`,
 							},
 						},
@@ -814,7 +850,7 @@ func TestEvaluateMutating(t *testing.T) {
 				Operation: admissionv1.Create,
 			}
 
-			result, err := evaluator.EvaluateMutating(tc.policy, nil, request, tc.object, tc.oldObject, nil, nil, nil, nil)
+			result, err := evaluator.EvaluateMutating(validMAP(tc.policy), nil, request, tc.object, tc.oldObject, nil, nil, nil, nil)
 
 			if tc.expectedError {
 				if err == nil {
@@ -829,7 +865,7 @@ func TestEvaluateMutating(t *testing.T) {
 			}
 
 			if !result.Allowed {
-				t.Errorf("EvaluateMutating() Allowed = false, want true")
+				t.Errorf("EvaluateMutating() Allowed = false, want true: %s", result.Message)
 			}
 
 			if !tc.expectedMutated {
@@ -849,7 +885,7 @@ func TestEvaluateMutating(t *testing.T) {
 			}
 
 			// Use cmp.Diff for clear comparison, showing only differences
-			if diff := cmp.Diff(tc.expectedObject.Object, result.PatchedObject.Object); diff != "" {
+			if diff := cmp.Diff(jsonNormalize(t, tc.expectedObject.Object), jsonNormalize(t, result.PatchedObject.Object)); diff != "" {
 				t.Errorf("Patched object mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -1048,7 +1084,7 @@ func TestEvaluateValidating(t *testing.T) {
 				Operation: admissionv1.Create,
 			}
 
-			result, err := evaluator.EvaluateValidating(tc.policy, nil, request, tc.object, tc.oldObject, nil, nil, nil, nil)
+			result, err := evaluator.EvaluateValidating(validVAP(tc.policy), nil, request, tc.object, tc.oldObject, nil, nil, nil, nil)
 			if err != nil {
 				t.Fatalf("EvaluateValidating() error = %v", err)
 			}
@@ -1167,7 +1203,7 @@ func TestEvaluateValidating_LazyVariables(t *testing.T) {
 				Operation: admissionv1.Create,
 			}
 
-			result, err := evaluator.EvaluateValidating(tc.policy, nil, request, tc.object, nil, nil, nil, nil, nil)
+			result, err := evaluator.EvaluateValidating(validVAP(tc.policy), nil, request, tc.object, nil, nil, nil, nil, nil)
 			if err != nil {
 				t.Fatalf("EvaluateValidating() error = %v", err)
 			}
@@ -1220,7 +1256,7 @@ func TestEvaluateValidating_MultipleValidations(t *testing.T) {
 		Operation: admissionv1.Create,
 	}
 
-	result, err := evaluator.EvaluateValidating(policy, nil, request, object, nil, nil, nil, nil, nil)
+	result, err := evaluator.EvaluateValidating(validVAP(policy), nil, request, object, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("EvaluateValidating() error = %v", err)
 	}
@@ -1232,246 +1268,6 @@ func TestEvaluateValidating_MultipleValidations(t *testing.T) {
 	expectedMessage := "Pod must have environment label"
 	if result.Message != expectedMessage {
 		t.Errorf("EvaluateValidating() Message = %q, want %q", result.Message, expectedMessage)
-	}
-}
-
-//nolint:funlen // Test function
-func TestEvaluateExpression_Simple(t *testing.T) {
-	t.Parallel()
-
-	evaluator, err := New()
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	tests := []struct {
-		name       string
-		expression string
-		vars       map[string]any
-		want       any
-		wantErr    bool
-	}{
-		{
-			name:       "simple boolean true",
-			expression: "true",
-			vars:       map[string]any{},
-			want:       true,
-			wantErr:    false,
-		},
-		{
-			name:       "simple boolean false",
-			expression: "false",
-			vars:       map[string]any{},
-			want:       false,
-			wantErr:    false,
-		},
-		{
-			name:       "string comparison",
-			expression: `object.name == "test"`,
-			vars:       map[string]any{"object": map[string]any{"name": "test"}},
-			want:       true,
-			wantErr:    false,
-		},
-		{
-			name:       "has() function",
-			expression: `has(object.metadata)`,
-			vars:       map[string]any{"object": map[string]any{"metadata": map[string]any{}}},
-			want:       true,
-			wantErr:    false,
-		},
-		{
-			name:       "invalid expression",
-			expression: "this is not valid CEL",
-			vars:       map[string]any{},
-			want:       nil,
-			wantErr:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		tc := tt
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := evaluator.evaluateExpression(tc.expression, tc.vars)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("evaluateExpression() error = %v, wantErr %v", err, tc.wantErr)
-
-				return
-			}
-
-			if !tc.wantErr && got != tc.want {
-				t.Errorf("evaluateExpression() = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-//nolint:cyclop // Covers many admission request shapes and fields
-func TestConvertAdmissionRequest(t *testing.T) {
-	t.Parallel()
-
-	dryRun := true
-	request := &admissionv1.AdmissionRequest{
-		UID:       types.UID("test-uid"),
-		Kind:      metav1.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
-		Resource:  metav1.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
-		Name:      "test-deployment",
-		Namespace: "default",
-		Operation: admissionv1.Create,
-		UserInfo: authenticationv1.UserInfo{
-			Username: "test-user",
-			UID:      "test-uid",
-			Groups:   []string{"system:authenticated", "developers"},
-		},
-		DryRun: &dryRun,
-	}
-
-	result, err := convertAdmissionRequest(request)
-	if err != nil {
-		t.Fatalf("convertAdmissionRequest() error = %v", err)
-	}
-
-	// runtime.DefaultUnstructuredConverter converts types to their basic equivalents
-	// types.UID becomes string, etc.
-	if result["uid"] != "test-uid" {
-		t.Errorf("convertAdmissionRequest() uid = %v, want test-uid", result["uid"])
-	}
-
-	if result["name"] != "test-deployment" {
-		t.Errorf("convertAdmissionRequest() name = %v, want test-deployment", result["name"])
-	}
-
-	if result["namespace"] != "default" {
-		t.Errorf("convertAdmissionRequest() namespace = %v, want default", result["namespace"])
-	}
-
-	if result["operation"] != "CREATE" {
-		t.Errorf("convertAdmissionRequest() operation = %v, want CREATE", result["operation"])
-	}
-
-	if result["dryRun"] != true {
-		t.Errorf("convertAdmissionRequest() dryRun = %v, want true", result["dryRun"])
-	}
-
-	// Check kind structure
-	kind, ok := result["kind"].(map[string]any)
-	if !ok {
-		t.Fatal("convertAdmissionRequest() kind is not a map")
-	}
-
-	if kind["group"] != "apps" || kind["version"] != "v1" || kind["kind"] != "Deployment" {
-		t.Errorf("convertAdmissionRequest() kind = %v, want {group:apps, version:v1, kind:Deployment}", kind)
-	}
-
-	// Check userInfo structure
-	userInfo, ok := result["userInfo"].(map[string]any)
-	if !ok {
-		t.Fatal("convertAdmissionRequest() userInfo is not a map")
-	}
-
-	if userInfo["username"] != "test-user" {
-		t.Errorf("convertAdmissionRequest() userInfo.username = %v, want test-user", userInfo["username"])
-	}
-}
-
-//nolint:funlen // Test function
-func TestEvaluateMatchConditions(t *testing.T) {
-	t.Parallel()
-
-	evaluator, err := New()
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	tests := []struct {
-		name       string
-		conditions []admissionregv1.MatchCondition
-		vars       map[string]any
-		want       bool
-		wantErr    bool
-	}{
-		{
-			name:       "no conditions - should match",
-			conditions: []admissionregv1.MatchCondition{},
-			vars:       map[string]any{},
-			want:       true,
-			wantErr:    false,
-		},
-		{
-			name: "single condition - match",
-			conditions: []admissionregv1.MatchCondition{
-				{Name: "test", Expression: "true"},
-			},
-			vars:    map[string]any{},
-			want:    true,
-			wantErr: false,
-		},
-		{
-			name: "single condition - no match",
-			conditions: []admissionregv1.MatchCondition{
-				{Name: "test", Expression: "false"},
-			},
-			vars:    map[string]any{},
-			want:    false,
-			wantErr: false,
-		},
-		{
-			name: "multiple conditions - all match",
-			conditions: []admissionregv1.MatchCondition{
-				{Name: "test1", Expression: "true"},
-				{Name: "test2", Expression: "true"},
-			},
-			vars:    map[string]any{},
-			want:    true,
-			wantErr: false,
-		},
-		{
-			name: "multiple conditions - first fails",
-			conditions: []admissionregv1.MatchCondition{
-				{Name: "test1", Expression: "false"},
-				{Name: "test2", Expression: "true"},
-			},
-			vars:    map[string]any{},
-			want:    false,
-			wantErr: false,
-		},
-		{
-			name: "condition with variables",
-			conditions: []admissionregv1.MatchCondition{
-				{Name: "test", Expression: `object.namespace == "default"`},
-			},
-			vars:    map[string]any{"object": map[string]any{"namespace": "default"}},
-			want:    true,
-			wantErr: false,
-		},
-		{
-			name: "invalid expression",
-			conditions: []admissionregv1.MatchCondition{
-				{Name: "test", Expression: "not valid cel"},
-			},
-			vars:    map[string]any{},
-			want:    false,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		tc := tt
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := evaluator.evaluateMatchConditions(tc.conditions, tc.vars)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("evaluateMatchConditions() error = %v, wantErr %v", err, tc.wantErr)
-
-				return
-			}
-
-			if got != tc.want {
-				t.Errorf("evaluateMatchConditions() = %v, want %v", got, tc.want)
-			}
-		})
 	}
 }
 
@@ -1567,7 +1363,7 @@ func TestRealPolicy_RequireOwnerLabel(t *testing.T) {
 				t.Fatalf("New() error = %v", err)
 			}
 
-			result, err := evaluator.EvaluateValidating(policy, nil, request, tc.object, nil, nil, nil, nil, nil)
+			result, err := evaluator.EvaluateValidating(validVAP(policy), nil, request, tc.object, nil, nil, nil, nil, nil)
 			if err != nil {
 				t.Fatalf("EvaluateValidating() error = %v", err)
 			}
@@ -1704,7 +1500,7 @@ object.spec.containers.all(container,
 				t.Fatalf("New() error = %v", err)
 			}
 
-			result, err := evaluator.EvaluateValidating(policy, nil, request, tc.object, nil, nil, nil, nil, nil)
+			result, err := evaluator.EvaluateValidating(validVAP(policy), nil, request, tc.object, nil, nil, nil, nil, nil)
 			if err != nil {
 				t.Fatalf("EvaluateValidating() error = %v", err)
 			}
@@ -1999,7 +1795,7 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 				Spec: admissionregv1.ValidatingAdmissionPolicySpec{
 					Validations: []admissionregv1.Validation{
 						{Expression: "false", Message: "warn1"},
-						{Expression: "false", Message: "warn2"},
+						{Expression: "true", Message: "warn2"},
 					},
 				},
 			},
@@ -2035,7 +1831,7 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 				ExpectAllowed: true,
 			},
 			wantPassed:  false,
-			wantMessage: "evaluation error",
+			wantMessage: "the API server would reject the policy",
 		},
 	}
 
@@ -2043,7 +1839,7 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			result := evaluator.EvaluateTest(tc.mutatingPolicy, tc.mutatingBinding, tc.validatingPolicy, tc.validatingBinding, tc.testCase)
+			result := evaluator.EvaluateTest(t.Context(), policiesOf(tc.mutatingPolicy, tc.mutatingBinding, tc.validatingPolicy, tc.validatingBinding), tc.testCase)
 
 			if result.Passed != tc.wantPassed {
 				t.Errorf("EvaluateTest() Passed = %v, want %v. Message: %s", result.Passed, tc.wantPassed, result.Message)
@@ -2085,8 +1881,8 @@ func TestEvaluateMutating_JSONPatchListOfObjects(t *testing.T) {
 
 	object := &unstructured.Unstructured{
 		Object: map[string]any{
-			"apiVersion": "apps/v1",
-			"kind":       "Deployment",
+			"apiVersion": "v1",
+			"kind":       "Pod",
 			"metadata":   map[string]any{"name": "web", "namespace": "default"},
 			"spec":       map[string]any{},
 		},
@@ -2099,7 +1895,7 @@ func TestEvaluateMutating_JSONPatchListOfObjects(t *testing.T) {
 		Operation: admissionv1.Create,
 	}
 
-	result, err := evaluator.EvaluateMutating(policy, nil, request, object, nil, nil, nil, nil, nil)
+	result, err := evaluator.EvaluateMutating(validMAP(policy), nil, request, object, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("EvaluateMutating() error = %v", err)
 	}
@@ -2112,4 +1908,136 @@ func TestEvaluateMutating_JSONPatchListOfObjects(t *testing.T) {
 	if len(constraints) != 1 {
 		t.Fatalf("expected 1 constraint, got %d", len(constraints))
 	}
+}
+
+// TestEvaluateMutating_InvalidInput checks that an input the API server would
+// not pass to admission as written is an input error, not a patch's
+// InternalError.
+func TestEvaluateMutating_InvalidInput(t *testing.T) {
+	t.Parallel()
+
+	e, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	policy := validMAP(makeMutatingPolicy(`[JSONPatch{op: "add", path: "/metadata/labels", value: {"a": "b"}}]`))
+	request := &admissionv1.AdmissionRequest{Operation: admissionv1.Create}
+
+	tests := []struct {
+		name    string
+		spec    map[string]any
+		wantErr string
+	}{
+		{name: "unknown field", spec: map[string]any{"bogus": "x"}, wantErr: `object has a field the API server drops before admission: strict decoding error: unknown field "spec.bogus"`},
+		{name: "wrong type", spec: map[string]any{"containers": "x"}, wantErr: "the API server would reject the object: json: cannot unmarshal string"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			object := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "v1", "kind": "Pod",
+				"metadata": map[string]any{"name": "test-pod"},
+				"spec":     tt.spec,
+			}}
+
+			_, err := e.EvaluateMutating(policy, nil, request, object, nil, nil, nil, nil, nil)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestEvaluateValidating_Failures covers how failing validations combine, as in
+// the API server: Warn reports every failure, and Deny denies with the first.
+func TestEvaluateValidating_Failures(t *testing.T) {
+	t.Parallel()
+
+	e, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	policy := &admissionregv1.ValidatingAdmissionPolicy{Spec: admissionregv1.ValidatingAdmissionPolicySpec{
+		Validations: []admissionregv1.Validation{
+			{Expression: "false", Message: " first "},
+			{Expression: "true", Message: "passes"},
+			{Expression: "object.missing == 1"},
+			{Expression: "false", MessageExpression: "'multi\\nline'"},
+		},
+	}}
+	object := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Pod"}}
+	request := &admissionv1.AdmissionRequest{Operation: admissionv1.Create}
+	want := []string{
+		"first",
+		"expression 'object.missing == 1' resulted in error: no such key: missing",
+		"failed expression: false",
+	}
+
+	evaluate := func(action admissionregv1.ValidationAction) *EvaluationResult {
+		binding := &admissionregv1.ValidatingAdmissionPolicyBinding{Spec: admissionregv1.ValidatingAdmissionPolicyBindingSpec{
+			ValidationActions: []admissionregv1.ValidationAction{action},
+		}}
+
+		result, err := e.EvaluateValidating(validVAP(policy), validVAPB(binding, "test-policy"), request, object, nil, nil, nil, nil, nil)
+		if err != nil {
+			t.Fatalf("%s: EvaluateValidating() error = %v", action, err)
+		}
+
+		return result
+	}
+
+	if got := evaluate(admissionregv1.Warn); !got.Allowed || !cmp.Equal(got.Warnings, want) {
+		t.Errorf("Warn: Allowed = %v, Warnings = %q, want true, %q", got.Allowed, got.Warnings, want)
+	}
+
+	if got := evaluate(admissionregv1.Deny); got.Allowed || got.Message != want[0] || len(got.Warnings) != 0 {
+		t.Errorf("Deny: Allowed = %v, Message = %q, Warnings = %q, want false, %q, none",
+			got.Allowed, got.Message, got.Warnings, want[0])
+	}
+}
+
+func policiesOf(
+	mp *admissionregv1.MutatingAdmissionPolicy,
+	mb *admissionregv1.MutatingAdmissionPolicyBinding,
+	vp *admissionregv1.ValidatingAdmissionPolicy,
+	vb *admissionregv1.ValidatingAdmissionPolicyBinding,
+) Policies {
+	var p Policies
+	if mp != nil {
+		p.Mutating = validMAP(mp)
+	}
+
+	if vp != nil {
+		p.Validating = validVAP(vp)
+	}
+
+	if mb != nil {
+		p.MutatingBindings = append(p.MutatingBindings, validMAPB(mb, p.Mutating.Name))
+	}
+
+	if vb != nil {
+		p.ValidatingBindings = append(p.ValidatingBindings, validVAPB(vb, p.Validating.Name))
+	}
+
+	return p
+}
+
+func jsonNormalize(t *testing.T, obj map[string]any) any {
+	t.Helper()
+
+	data, err := json.Marshal(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out any
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	return out
 }

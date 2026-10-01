@@ -4,14 +4,12 @@ import (
 	"fmt"
 	"slices"
 
-	admissionv1 "k8s.io/api/admission/v1"
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/admission"
 	predicaterules "k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/rules"
 )
@@ -22,13 +20,9 @@ import (
 func policyApplies(
 	constraints *admissionregv1.MatchResources,
 	bindingResources *admissionregv1.MatchResources,
-	request *admissionv1.AdmissionRequest,
-	object *unstructured.Unstructured,
-	oldObject *unstructured.Unstructured,
+	attr admission.Attributes,
 	namespaceObj *unstructured.Unstructured,
 ) (bool, error) {
-	attr := newAttributes(request, object, oldObject, namespaceObj)
-
 	for _, mr := range []*admissionregv1.MatchResources{constraints, bindingResources} {
 		matched, err := matchesResources(mr, attr, namespaceObj)
 		if err != nil || !matched {
@@ -150,46 +144,4 @@ func hasMatchingLabels(obj runtime.Object, selector labels.Selector) bool {
 	}
 
 	return selector.Matches(labels.Set(accessor.GetLabels()))
-}
-
-// newAttributes adapts a test's admission request to admission.Attributes. When
-// the request carries no namespace, the namespaceObject's name stands in so that
-// rule scope sees the request as namespaced.
-func newAttributes(
-	req *admissionv1.AdmissionRequest,
-	object *unstructured.Unstructured,
-	oldObject *unstructured.Unstructured,
-	namespaceObj *unstructured.Unstructured,
-) admission.Attributes {
-	if req == nil {
-		req = &admissionv1.AdmissionRequest{}
-	}
-
-	namespace := req.Namespace
-	if namespace == "" && namespaceObj != nil {
-		namespace = namespaceObj.GetName()
-	}
-
-	return admission.NewAttributesRecord(
-		asRuntimeObject(object),
-		asRuntimeObject(oldObject),
-		schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind},
-		namespace,
-		req.Name,
-		schema.GroupVersionResource{Group: req.Resource.Group, Version: req.Resource.Version, Resource: req.Resource.Resource},
-		req.SubResource,
-		admission.Operation(req.Operation),
-		nil,
-		false,
-		nil,
-	)
-}
-
-// asRuntimeObject keeps a nil *Unstructured from becoming a non-nil interface.
-func asRuntimeObject(u *unstructured.Unstructured) runtime.Object {
-	if u == nil {
-		return nil
-	}
-
-	return u
 }

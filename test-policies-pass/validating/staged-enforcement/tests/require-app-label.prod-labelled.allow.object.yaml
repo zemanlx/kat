@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settings
+  namespace: production
+  labels:
+    app: web
+data:
+  key: value

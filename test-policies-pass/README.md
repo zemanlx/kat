@@ -64,6 +64,22 @@ This directory contains comprehensive test policies covering all major features 
 
 ---
 
+#### `reinvocation/` (reinvocationPolicy: IfNeeded)
+
+**Purpose:** Counts its own invocations in an annotation, showing that the API server
+runs an `IfNeeded` policy once more after it changed the object.
+
+**Features tested:**
+
+- `reinvocationPolicy: IfNeeded`
+- A non-idempotent ApplyConfiguration mutation
+
+**Test cases:**
+
+- 🔧 `reinvoked` - ConfigMap gets `example.com/invocations: "2"`
+
+---
+
 ### Validating Policies (`validating/`)
 
 #### `require-owner-label/`
@@ -287,17 +303,38 @@ This directory contains comprehensive test policies covering all major features 
 
 #### `deprecated-api-warn/` (Warn Action)
 
-**Purpose:** Warns about deprecated API versions.
+**Purpose:** Warns about deprecated API usage: the `kubernetes.io/ingress.class`
+annotation, replaced by `spec.ingressClassName`.
 
 **Features tested:**
 
 - `validationActions: [Warn]`
 - Warning message generation
-- `.warnings.txt` assertion
+- `.warnings.txt` assertion, and an empty `.warnings.txt` asserting no warnings
 
 **Test cases:**
 
-- ⚠️ `old-version.warn` - apps/v1beta1 Deployment (allowed with warning)
+- ⚠️ `ingress-class-annotation.warn` - Ingress with the annotation (allowed with warning)
+- ✅ `ingress-class-name.allow` - Ingress with `spec.ingressClassName` (no warnings)
+
+---
+
+#### `staged-enforcement/` (Multiple Bindings)
+
+**Purpose:** One policy with two bindings: enforced in production namespaces, only
+warned about and audited elsewhere.
+
+**Features tested:**
+
+- Several bindings of one policy, selected by `namespaceSelector`
+- `validationActions: [Warn, Audit]` and the `validation_failure` audit annotation
+- Empty `.warnings.txt` and `{}` `.annotations.yaml` asserting none
+
+**Test cases:**
+
+- ❌ `prod-unlabelled.deny` - ConfigMap without `app` label in production
+- ⚠️ `dev-unlabelled.warn` - the same in development (warning and `validation_failure`)
+- ✅ `prod-labelled.allow` - labelled ConfigMap in production (no warnings or annotations)
 
 ---
 
@@ -325,7 +362,7 @@ This directory contains comprehensive test policies covering all major features 
 
 **Features tested:**
 
-- `matchConditions` with namespace labels
+- `matchConditions` on `request.namespace` (match conditions cannot read `namespaceObject`)
 - Policy skipping when conditions don't match
 - Test failure when policy is expected to apply but is skipped
 
@@ -392,6 +429,8 @@ kat ./test-policies-pass/require-owner-label/tests/require-owner-label.without-l
 | Audit action                      | `track-privileged-audit`                                           |
 | Mutations                         | `sidecar-injection`, `add-default-labels`, `mutating-with-binding` |
 | Mutations with binding + params   | `mutating-with-binding`                                            |
+| Reinvocation                      | `reinvocation`                                                     |
+| Multiple bindings                 | `staged-enforcement`                                               |
 | matchConditions                   | `conditional-policy`, `sidecar-injection`                          |
 | messageExpression                 | `replica-limit`, `prevent-owner-change`                            |
 | auditAnnotations                  | `track-privileged-audit`                                           |

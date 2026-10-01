@@ -1,0 +1,1 @@
+Internal error occurred: json: cannot unmarshal string into Go struct field PodSpec.spec.containers of type []v1.Container

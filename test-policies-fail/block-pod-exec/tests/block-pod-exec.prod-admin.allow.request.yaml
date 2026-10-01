@@ -1,4 +1,7 @@
 operation: CONNECT
+resource:
+  version: v1
+  resource: pods
 subResource: exec
 name: app-pod
 namespace: production

@@ -16,8 +16,8 @@ spec:
   - name: isMultiContainer
     expression: "variables.containerCount > 1"
   matchConditions:
-  - name: only-pods-with-containers
-    expression: "variables.containerCount > 0"
+  - name: not-exempt
+    expression: "!has(object.metadata.labels) || !('policy.example.com/exempt' in object.metadata.labels)"
   validations:
   - expression: |
       !variables.isMultiContainer ||

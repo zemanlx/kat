@@ -3,6 +3,12 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: check-authorizer
 spec:
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["configmaps"]
   matchConditions:
     - name: "is-configmap"
       expression: "object.kind == 'ConfigMap'"

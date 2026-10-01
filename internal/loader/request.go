@@ -72,6 +72,7 @@ type simplifiedRequest struct {
 	OldObject       map[string]any               `json:"oldObject,omitempty"`
 	Params          map[string]any               `json:"params,omitempty"`
 	Options         map[string]any               `json:"options,omitempty"`
+	DryRun          *bool                        `json:"dryRun,omitempty"`
 }
 
 // parseRequestYAML parses a simplified request format.
@@ -101,12 +102,7 @@ func parseRequestYAML(testReq *testRequest, data []byte) error {
 		testReq.Params = &unstructured.Unstructured{Object: req.Params}
 	}
 
-	// Load gold file if present (for mutating policies tested via request.yaml).
-	if err := loadGoldFile(testReq); err != nil {
-		return err
-	}
-
-	return nil
+	return loadAuxiliaryFiles(testReq)
 }
 
 func validateSimplifiedRequest(req *simplifiedRequest) error {
@@ -203,6 +199,7 @@ func buildAdmissionRequestFromSimplified(req *simplifiedRequest, testReq *testRe
 		Name:        req.Name,
 		Namespace:   req.Namespace,
 		SubResource: req.SubResource,
+		DryRun:      req.DryRun,
 	}
 
 	if req.UserInfo != nil {
@@ -211,15 +208,34 @@ func buildAdmissionRequestFromSimplified(req *simplifiedRequest, testReq *testRe
 	}
 
 	if req.Object != nil {
-		obj := &unstructured.Unstructured{Object: req.Object}
-		testReq.Object = obj
+		testReq.Object = &unstructured.Unstructured{Object: req.Object}
+	}
 
-		gvk := obj.GroupVersionKind()
+	// The request describes object, or oldObject for a DELETE.
+	var described *unstructured.Unstructured
+
+	switch {
+	case req.Object != nil:
+		described = testReq.Object
+	case req.OldObject != nil:
+		described = &unstructured.Unstructured{Object: req.OldObject}
+	}
+
+	if described != nil {
+		gvk := described.GroupVersionKind()
 		admReq.Resource = resourceForKind(gvk)
 		admReq.Kind = metav1.GroupVersionKind{
 			Group:   gvk.Group,
 			Version: gvk.Version,
 			Kind:    gvk.Kind,
+		}
+
+		if admReq.Name == "" {
+			admReq.Name = described.GetName()
+		}
+
+		if admReq.Namespace == "" {
+			admReq.Namespace = described.GetNamespace()
 		}
 	}
 
@@ -431,7 +447,8 @@ func parseParamsYAML(testReq *testRequest, data []byte) error {
 
 // parseAnnotationsYAML parses expected audit annotations file.
 func parseAnnotationsYAML(testReq *testRequest, data []byte) error {
-	var annotations map[string]string
+	// A file without annotations expects the request to get none.
+	annotations := map[string]string{}
 	if err := yaml.Unmarshal(data, &annotations); err != nil {
 		return fmt.Errorf("failed to unmarshal annotations: %w", err)
 	}
@@ -442,19 +459,12 @@ func parseAnnotationsYAML(testReq *testRequest, data []byte) error {
 }
 
 // parseWarningsFile parses expected warnings from a text file.
-// Each line is treated as a separate warning message.
+// Each line is treated as a separate warning message; an empty file expects
+// the request to get no warnings.
 func parseWarningsFile(testReq *testRequest, data []byte) error {
-	content := strings.TrimSpace(string(data))
-	if content == "" {
-		return nil
-	}
+	warnings := []string{}
 
-	// Split by newlines and filter empty lines
-	lines := strings.Split(content, "\n")
-
-	var warnings []string
-
-	for _, line := range lines {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			warnings = append(warnings, line)

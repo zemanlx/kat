@@ -1,0 +1,24 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: jsonpatch-errors
+spec:
+  reinvocationPolicy: Never
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          object.metadata.?labels["mode"].orValue("") == "remove-missing"
+          ? [JSONPatch{op: "remove", path: "/metadata/annotations/missing"}]
+          : object.metadata.?labels["mode"].orValue("") == "unknown-field"
+          ? [JSONPatch{op: "add", path: "/spec/bogus", value: "x"}]
+          : object.metadata.?labels["mode"].orValue("") == "wrong-type"
+          ? [JSONPatch{op: "replace", path: "/spec/containers", value: "not-a-list"}]
+          : [JSONPatch{op: "add", path: "/metadata/labels/patched", value: "true"}]

@@ -66,7 +66,8 @@ Recognized as test **inputs** (8):
 ```
 
 `.request.yaml` fields: `operation`, `object`, `oldObject`, `params`,
-`namespaceObject`, `userInfo`, `namespace`, `name`, `resource`, `subResource`, `options`.
+`namespaceObject`, `userInfo`, `namespace`, `name`, `resource`, `subResource`, `options`,
+`dryRun`.
 
 `resource` (`{group, version, resource}`) is derived from the object's kind. Set it
 for CONNECT (`{version: v1, resource: pods}` + `subResource: exec`) or a CRD with an
@@ -113,10 +114,14 @@ optional; with multiple policies it is required and must match a policy's
 Only the `deny` token flips the allow/deny expectation. `warn`/`audit` are
 allow-with-assertions and rely on their companion files for the real check.
 
-The expect token is a **validating**-policy concept. A `MutatingAdmissionPolicy`
-always returns `Allowed == true` (it mutates, never denies), so the token has no
-effect for mutating tests. Omit it: name the case `<policy-name>.<test-name>`
-(no `<expect>`) and assert the outcome with a `.gold.yaml` companion file.
+The expect token is mostly a **validating**-policy concept. A
+`MutatingAdmissionPolicy` usually allows, so name a normal mutating case
+`<policy-name>.<test-name>` (no `<expect>`) and assert the outcome with a
+`.gold.yaml` companion file. It denies, as on the API server, when its JSON patch
+fails to apply or yields an invalid object of a built-in kind (an unknown field, a
+wrong type), when its params are missing under `parameterNotFoundAction: Deny`, or
+when a match condition fails to evaluate under `failurePolicy: Fail`. Name such a
+case `.deny.` and pin the message with `.message.txt`.
 
 ## Operation inference
 
@@ -143,9 +148,10 @@ error: `conflict: <field> defined in multiple files`.
 - **deny**: `Allowed == false`; if `.message.txt` present, message must equal it
   exactly (diff shown on mismatch).
 - **warn**: `Allowed == true`; warnings compared by index against `.warnings.txt`
-  (same count, each line exact).
+  (same count, each line exact). An empty file expects no warnings.
 - **audit**: `Allowed == true`; actual annotations filtered to the keys in
-  `.annotations.yaml`, then compared for exact equality (extra keys ignored).
+  `.annotations.yaml`, then compared for exact equality (extra keys ignored). A
+  file of `{}` expects no annotations.
 - **mutation**: if the policy mutates but no `.gold.yaml` exists, the case fails
   with "policy mutated the object but no .gold.yaml file was provided"; if
   `.gold.yaml` exists, actual vs expected objects are diffed as YAML.
@@ -160,4 +166,6 @@ error: `conflict: <field> defined in multiple files`.
 
 - Only `admissionregistration.k8s.io/v1` policies/bindings are supported;
   `v1beta1` documents are a hard error.
+- Policies and bindings are validated as the API server validates them on
+  creation; a rejected policy fails all its cases.
 - `kat` exits `0` when all tests pass, non-zero otherwise.

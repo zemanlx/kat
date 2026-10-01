@@ -1,0 +1,48 @@
+# Expected to be allowed because the old object had 3 replicas, but
+# validations check the new object, which has 1.
+namespace: production
+namespaceObject:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: production
+    labels:
+      environment: prod
+oldObject:
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: prod-deployment
+      namespace: production
+    spec:
+      replicas: 3
+      selector:
+        matchLabels:
+          app: test
+      template:
+        metadata:
+          labels:
+            app: test
+        spec:
+          containers:
+          - name: nginx
+            image: nginx
+object:
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: prod-deployment
+      namespace: production
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: test
+      template:
+        metadata:
+          labels:
+            app: test
+        spec:
+          containers:
+          - name: nginx
+            image: nginx

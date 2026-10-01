@@ -328,6 +328,54 @@ resource:
 	}
 }
 
+func TestParseRequestYAML_MessageFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	requestFile := filepath.Join(dir, "test.deny.request.yaml")
+
+	if err := os.WriteFile(filepath.Join(dir, "test.deny.message.txt"), []byte("denied\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := &testRequest{Name: "test", FilePath: requestFile}
+	if err := parseRequestYAML(req, []byte("operation: CONNECT\n")); err != nil {
+		t.Fatalf("parseRequestYAML() error = %v", err)
+	}
+
+	if req.ExpectMessage != "denied" {
+		t.Errorf("ExpectMessage = %q, want %q", req.ExpectMessage, "denied")
+	}
+}
+
+func TestParseRequestYAML_DescribesOldObject(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`
+operation: DELETE
+oldObject:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: api
+    namespace: prod
+`)
+	req := &testRequest{Name: "delete", FilePath: filepath.Join(t.TempDir(), "delete.request.yaml")}
+
+	if err := parseRequestYAML(req, content); err != nil {
+		t.Fatalf("parseRequestYAML() error = %v", err)
+	}
+
+	got := req.Request
+	if got.Kind.Kind != "Deployment" || got.Resource.Resource != "deployments" || got.Resource.Group != "apps" {
+		t.Errorf("Kind = %v, Resource = %v; want apps/v1 Deployment, deployments", got.Kind, got.Resource)
+	}
+
+	if got.Name != "api" || got.Namespace != "prod" {
+		t.Errorf("Name = %q, Namespace = %q; want api, prod", got.Name, got.Namespace)
+	}
+}
+
 //nolint:funlen // Test function length is due to YAML test data.
 func TestParseRequestYAML_GoldFile(t *testing.T) {
 	t.Parallel()

@@ -94,6 +94,47 @@ type testRequest struct {
 	Authorizer             []evaluator.AuthorizationMockConfig
 }
 
+// FindPolicies returns the policy named policyName with all of its bindings.
+// A mutating policy takes precedence over a validating policy of the same
+// name. Neither policy is set when there is no such policy.
+func (s *TestSuite) FindPolicies(policyName string) evaluator.Policies {
+	var p evaluator.Policies
+
+	for _, policy := range s.MutatingPolicies {
+		if policy.Name != policyName {
+			continue
+		}
+
+		p.Mutating = policy
+
+		for _, binding := range s.MutatingBindings {
+			if binding.Spec.PolicyName == policy.Name {
+				p.MutatingBindings = append(p.MutatingBindings, binding)
+			}
+		}
+
+		return p
+	}
+
+	for _, policy := range s.ValidatingPolicies {
+		if policy.Name != policyName {
+			continue
+		}
+
+		p.Validating = policy
+
+		for _, binding := range s.ValidatingBindings {
+			if binding.Spec.PolicyName == policy.Name {
+				p.ValidatingBindings = append(p.ValidatingBindings, binding)
+			}
+		}
+
+		return p
+	}
+
+	return p
+}
+
 // Load discovers and loads all test suites from the given path.
 // Pattern is optional and filters tests by name (like -run flag in go test).
 func Load(path string, pattern string) ([]*TestSuite, error) {
@@ -575,7 +616,7 @@ func mergeSimpleFields(testReq, tempReq *testRequest) {
 		testReq.ExpectMessage = tempReq.ExpectMessage
 	}
 
-	if len(tempReq.ExpectWarnings) > 0 {
+	if tempReq.ExpectWarnings != nil {
 		testReq.ExpectWarnings = tempReq.ExpectWarnings
 	}
 

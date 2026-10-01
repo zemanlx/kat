@@ -1,3 +1,5 @@
 kat
 dist
 coverage.out
+/bin/
+/conformance/.artifacts/

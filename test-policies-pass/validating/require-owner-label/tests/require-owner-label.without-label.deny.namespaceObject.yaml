@@ -1,0 +1,7 @@
+# The binding only selects namespaces labelled enforce-owner-label: "true".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+  labels:
+    enforce-owner-label: "true"

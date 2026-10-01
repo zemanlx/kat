@@ -227,7 +227,12 @@ func TestPolicyApplies(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := policyApplies(tc.constraints, tc.binding, tc.req, tc.object, tc.oldObject, tc.namespaceObj)
+			attr, err := newAttributes(tc.req, tc.object, tc.oldObject, tc.namespaceObj, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := policyApplies(tc.constraints, tc.binding, attr, tc.namespaceObj)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("policyApplies() error = %v, wantErr %v", err, tc.wantErr)
 			}

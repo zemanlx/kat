@@ -3,6 +3,7 @@ kind: MutatingAdmissionPolicy
 metadata:
   name: concat-jsonpatch
 spec:
+  reinvocationPolicy: Never
   failurePolicy: Fail
   matchConstraints:
     resourceRules:

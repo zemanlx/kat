@@ -4,21 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/cel-go/common/types/ref"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
-	"k8s.io/apiserver/pkg/cel/library"
 )
-
-// NewAuthorizerValue creates a CEL authorizer value using Kubernetes' library function.
-// This wraps a Kubernetes authorizer for use in CEL expressions.
-func NewAuthorizerValue(auth authorizer.Authorizer, userInfo user.Info) ref.Val {
-	if auth == nil || userInfo == nil {
-		return nil
-	}
-
-	return library.NewAuthorizerVal(userInfo, auth)
-}
 
 // MockAuthorizer is a simple mock authorizer for testing.
 type MockAuthorizer struct {

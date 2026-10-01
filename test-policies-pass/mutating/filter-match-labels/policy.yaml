@@ -3,6 +3,7 @@ kind: MutatingAdmissionPolicy
 metadata:
   name: filter-match-labels
 spec:
+  reinvocationPolicy: Never
   failurePolicy: Fail
   matchConstraints:
     resourceRules:

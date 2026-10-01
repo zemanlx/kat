@@ -3,9 +3,11 @@
 Copy-ready file sets, one per archetype. **Rename** each file to
 `<policy-name>.<test-name>.<expect>.<type>.yaml` before placing it in a `tests/`
 directory (drop the `<policy-name>.` prefix if the directory has a single policy).
-The `<expect>` token is a **validating** concept; for the **Mutation** archetype
-omit it — mutating policies always allow, so name the case after what it mutates
-(`<policy-name>.<test-name>.<type>.yaml`) and assert with `.gold.yaml`.
+The `<expect>` token is mostly a **validating** concept; for the **Mutation**
+archetype omit it — mutating policies usually allow, so name the case after what
+it mutates (`<policy-name>.<test-name>.<type>.yaml`) and assert with `.gold.yaml`.
+For a request the mutating policy denies (for example a JSON patch that fails),
+use the **Deny** archetype instead.
 
 | Archetype | Files |
 |---|---|

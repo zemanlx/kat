@@ -1,0 +1,13 @@
+# Cases that are expected to differ from a real kube-apiserver. A listed case
+# must fail the conformance comparison; once it matches, the test fails with
+# "unexpected pass" so the entry gets removed. See "Conformance tests" in
+# AGENTS.md.
+#
+# Fields:
+#   suite:       fixture suite directory, relative to the repository root
+#   case:        test name without ".yaml"; omit to cover the whole suite
+#   minVersion:  first Kubernetes minor the entry applies to (optional)
+#   maxVersion:  last Kubernetes minor the entry applies to (optional)
+#   reason:      why kat and the server differ
+#   issue:       link to the tracking issue (optional)
+divergences: []

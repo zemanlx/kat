@@ -1,0 +1,22 @@
+# A small deployment: matchConditions (replicas > 3) is false, so the
+# params-reading 'maxReplicas' variable is never evaluated. The params below
+# have no maxReplicas key, so evaluating that variable would fail -- on a real
+# cluster the request never touches it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: small-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: small
+  template:
+    metadata:
+      labels:
+        app: small
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
