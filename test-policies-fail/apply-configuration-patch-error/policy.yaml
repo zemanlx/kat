@@ -1,0 +1,21 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: prefix-images
+spec:
+  reinvocationPolicy: Never
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE"]
+      resources: ["pods"]
+  mutations:
+  # Bug: containers are plain CEL maps, not Object.spec.containers, so the
+  # patch cannot be converted to the typed object and the request is denied.
+  - patchType: ApplyConfiguration
+    applyConfiguration:
+      expression: >-
+        Object{spec: Object.spec{containers: object.spec.containers.map(c,
+          {"name": string(c.name), "image": "registry.example/" + c.image})}}
