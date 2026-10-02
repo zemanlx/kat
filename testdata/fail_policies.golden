@@ -16,14 +16,18 @@
          replicas: 1
 FAIL	add-default-labels	0.000s
 
+--- FAIL: apply-configuration-patch-error/prefix-images.prefix-registry.yaml (0.00s)
+    expected allowed=true, got allowed=false: error applying patch: failed to convert patch object to typed object: .spec.containers: element 0: associative list with keys may not have non-map elements
+FAIL	apply-configuration-patch-error	0.000s
+
 --- FAIL: block-pod-exec/block-pod-exec.prod-admin.allow.yaml (0.00s)
-    expected allowed=true, got allowed=false
+    expected allowed=true, got allowed=false: kubectl exec to production pods requires cluster-admins
 --- FAIL: block-pod-exec/block-pod-exec.prod-non-admin.deny.yaml (0.00s)
     expected allowed=false, got allowed=true
 FAIL	block-pod-exec	0.000s
 
 --- FAIL: block-team-ci-service-accounts/block-team-ci.allowed-core-infra.allow.yaml (0.00s)
-    expected allowed=true, got allowed=false
+    expected allowed=true, got allowed=false: Service account system:serviceaccount:team-core-infrastructure-ci:deployer is not allowed to perform this operation
 --- FAIL: block-team-ci-service-accounts/block-team-ci.blocked-team-ci.deny.yaml (0.00s)
     message does not match expected:
     --- Expected
@@ -34,7 +38,7 @@ FAIL	block-pod-exec	0.000s
 FAIL	block-team-ci-service-accounts	0.000s
 
 --- FAIL: conditional-policy/conditional.dev-single-replica.allow.yaml (0.00s)
-    expected allowed=true, got allowed=false
+    expected allowed=true, got allowed=false: expression 'has(namespaceObject.metadata.labels) && 'environment' in namespaceObject.metadata.labels && namespaceObject.metadata.labels.environment == 'prod'' resulted in error: no such key: metadata
 --- FAIL: conditional-policy/conditional.prod-ha.deny.yaml (0.00s)
     message does not match expected:
     --- Expected
@@ -43,7 +47,7 @@ FAIL	block-team-ci-service-accounts	0.000s
     -Production deployments must have at least 3 replicas
     +expression 'has(namespaceObject.metadata.labels) && 'environment' in namespaceObject.metadata.labels && namespaceObject.metadata.labels.environment == 'prod'' resulted in error: no such key: metadata
 --- FAIL: conditional-policy/conditional.scale-down.allow.yaml (0.00s)
-    expected allowed=true, got allowed=false
+    expected allowed=true, got allowed=false: expression 'has(namespaceObject.metadata.labels) && 'environment' in namespaceObject.metadata.labels && namespaceObject.metadata.labels.environment == 'prod'' resulted in error: no such key: metadata
 FAIL	conditional-policy	0.000s
 
 --- FAIL: deprecated-api-warn/deprecated-api.ingress-class-annotation.warn.yaml (0.00s)
@@ -85,7 +89,7 @@ FAIL	mutating-with-binding	0.000s
 --- FAIL: prevent-owner-change/prevent-owner-change.changed-owner.deny.yaml (0.00s)
     expected allowed=false, got allowed=true
 --- FAIL: prevent-owner-change/prevent-owner-change.same-owner.allow.yaml (0.00s)
-    expected allowed=true, got allowed=false
+    expected allowed=true, got allowed=false: Cannot change owner from security-team to platform-team
 FAIL	prevent-owner-change	0.000s
 
 --- FAIL: track-privileged-audit/track-privileged.privileged-pod.audit.yaml (0.00s)

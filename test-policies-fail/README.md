@@ -20,6 +20,7 @@ The following directories check different failure modes:
 | Directory                         | Failure Mode Tested                                                                             |
 |-----------------------------------|-------------------------------------------------------------------------------------------------|
 | `add-default-labels/`             | **Mutation Mismatch**: The mutated object does not match the expected `.gold.yaml` file.        |
+| `apply-configuration-patch-error/` | **Patch Error**: An ApplyConfiguration fails at patch time and the denial message is reported. |
 | `block-pod-exec/`                 | **Validation Logic**: Policy denies a request that was expected to be allowed.                  |
 | `block-team-ci-service-accounts/` | **Request Context**: `userInfo` checks fail (service account handling).                         |
 | `conditional-policy/`             | **Match Conditions**: Policy is enforced/skipped unexpectedly due to `matchConditions`.         |

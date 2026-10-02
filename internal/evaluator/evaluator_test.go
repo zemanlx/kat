@@ -1622,7 +1622,28 @@ func TestEvaluator_EvaluateTest(t *testing.T) {
 				ExpectAllowed: true, // Expect allow, but policy denies
 			},
 			wantPassed:  false,
-			wantMessage: "expected allowed=true, got allowed=false",
+			wantMessage: "expected allowed=true, got allowed=false: denied",
+		},
+		{
+			name: "Mutating Policy Patch Error - Mismatch Expected Allowed",
+			mutatingPolicy: &admissionregv1.MutatingAdmissionPolicy{
+				Spec: admissionregv1.MutatingAdmissionPolicySpec{
+					Mutations: []admissionregv1.Mutation{
+						{
+							PatchType: admissionregv1.PatchTypeApplyConfiguration,
+							ApplyConfiguration: &admissionregv1.ApplyConfiguration{
+								Expression: `Object{spec: Object.spec{containers: [{"name": "app"}]}}`,
+							},
+						},
+					},
+				},
+			},
+			testCase: MockTestCase{
+				Object:        validPod,
+				ExpectAllowed: true,
+			},
+			wantPassed:  false,
+			wantMessage: "expected allowed=true, got allowed=false: error applying patch: ",
 		},
 		{
 			name: "Validating Policy Fail - Correct Expectation",

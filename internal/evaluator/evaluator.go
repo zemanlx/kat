@@ -98,9 +98,9 @@ func (e *Evaluator) EvaluateTest(ctx context.Context, policies Policies, testCas
 
 func validateTestResult(result *TestResult, expected *TestExpectation, actual *TestOutcome) *TestResult {
 	// Check if test passed with early returns
-	if actual.Allowed != expected.Allowed {
+	if msg := checkAllowed(expected, actual); msg != "" {
 		result.Passed = false
-		result.Message = fmt.Sprintf("expected allowed=%v, got allowed=%v", expected.Allowed, actual.Allowed)
+		result.Message = msg
 
 		return result
 	}
@@ -263,6 +263,21 @@ func (e *Evaluator) admitMutating(
 	}
 
 	return e.evaluateMutating(ctx, policy, created, req)
+}
+
+// checkAllowed returns a failure message, with the admission message if any,
+// when the admission decision is not the expected one, or "" if it is.
+func checkAllowed(expected *TestExpectation, actual *TestOutcome) string {
+	if actual.Allowed == expected.Allowed {
+		return ""
+	}
+
+	msg := fmt.Sprintf("expected allowed=%v, got allowed=%v", expected.Allowed, actual.Allowed)
+	if actual.Message != "" {
+		msg += ": " + actual.Message
+	}
+
+	return msg
 }
 
 // checkWarnings verifies that actual warnings match expected warnings.
