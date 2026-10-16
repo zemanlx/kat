@@ -351,42 +351,65 @@ func (e *Evaluator) evaluateValidating(
 
 	out := &validatingOutcome{}
 
-	configError := func(binding string, err error) {
-		if v.failurePolicy == admissionregv1.Fail {
-			out.deny(binding, "failed to configure binding: "+err.Error())
-		}
-	}
-
 	for _, binding := range bindings {
-		applies, err := policyApplies(policy.Spec.MatchConstraints, binding.Spec.MatchResources, req.attr, req.namespaceObj)
-		if err != nil {
-			configError(binding.Name, err)
-
-			continue
+		params := func() ([]runtime.Object, error) {
+			return collectParams(policy.Spec.ParamKind, binding.Spec.ParamRef, req.params, req.attr.GetNamespace())
 		}
 
-		if !applies {
-			continue
-		}
-
-		params, err := collectParams(policy.Spec.ParamKind, binding.Spec.ParamRef, req.params, req.attr.GetNamespace())
-		if fatalParamsErr(err) {
+		if err := v.evaluateBinding(ctx, out, binding, req, params); err != nil {
 			return nil, err
-		}
-
-		if err != nil {
-			configError(binding.Name, err)
-
-			continue
-		}
-
-		for _, p := range params {
-			decisions, annotations := v.validate(ctx, req, p)
-			out.record(policy.Name, binding, decisions, annotations)
 		}
 	}
 
 	return out.result(), nil
+}
+
+// evaluateBinding applies one binding to the request and records its
+// decisions in out. params is called only if the binding applies, since a
+// binding that does not select the request must not fail on its params.
+// It returns a params error that fatalParamsErr reports; any other is a
+// configuration error for failurePolicy to decide.
+func (v *validator) evaluateBinding(
+	ctx context.Context,
+	out *validatingOutcome,
+	binding *admissionregv1.ValidatingAdmissionPolicyBinding,
+	req *request,
+	params func() ([]runtime.Object, error),
+) error {
+	configError := func(err error) {
+		if v.failurePolicy == admissionregv1.Fail {
+			out.deny(binding.Name, "failed to configure binding: "+err.Error())
+		}
+	}
+
+	applies, err := policyApplies(v.policy.Spec.MatchConstraints, binding.Spec.MatchResources, req.attr, req.namespaceObj)
+	if err != nil {
+		configError(err)
+
+		return nil
+	}
+
+	if !applies {
+		return nil
+	}
+
+	ps, err := params()
+	if fatalParamsErr(err) {
+		return err
+	}
+
+	if err != nil {
+		configError(err)
+
+		return nil
+	}
+
+	for _, p := range ps {
+		decisions, annotations := v.validate(ctx, req, p)
+		out.record(v.policy.Name, binding, decisions, annotations)
+	}
+
+	return nil
 }
 
 func (o *validatingOutcome) record(

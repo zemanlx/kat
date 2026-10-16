@@ -188,18 +188,33 @@ func (e *Evaluator) Evaluate(ctx context.Context, policies Policies, testCase Te
 }
 
 // admitValidating creates the policy and its bindings as the API server
-// would, defaulting and validating them, then admits the request.
+// would, then admits the request.
 func (e *Evaluator) admitValidating(
 	ctx context.Context,
 	policy *admissionregv1.ValidatingAdmissionPolicy,
 	bindings []*admissionregv1.ValidatingAdmissionPolicyBinding,
 	req *request,
 ) (*EvaluationResult, error) {
+	policy, created, err := e.createValidating(policy, bindings)
+	if err != nil {
+		return nil, err
+	}
+
+	return e.evaluateValidating(ctx, policy, created, req)
+}
+
+// createValidating defaults and validates the policy and its bindings as the
+// API server does on creation. A policy without bindings gets the default
+// binding: Deny, no params.
+func (e *Evaluator) createValidating(
+	policy *admissionregv1.ValidatingAdmissionPolicy,
+	bindings []*admissionregv1.ValidatingAdmissionPolicyBinding,
+) (*admissionregv1.ValidatingAdmissionPolicy, []*admissionregv1.ValidatingAdmissionPolicyBinding, error) {
 	policy = policy.DeepCopy()
 	defaultValidatingPolicy(policy)
 
 	if err := e.validateValidatingPolicy(policy); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	created := make([]*admissionregv1.ValidatingAdmissionPolicyBinding, 0, len(bindings))
@@ -209,7 +224,7 @@ func (e *Evaluator) admitValidating(
 		defaultMatchResources(b.Spec.MatchResources)
 
 		if err := validateValidatingBinding(b); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		created = append(created, b)
@@ -225,7 +240,7 @@ func (e *Evaluator) admitValidating(
 		})
 	}
 
-	return e.evaluateValidating(ctx, policy, created, req)
+	return policy, created, nil
 }
 
 // admitMutating is admitValidating for a MutatingAdmissionPolicy.
