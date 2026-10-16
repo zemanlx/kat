@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apiserver/pkg/authentication/user"
 
-	"github.com/zemanlx/kat/internal/evaluator"
+	"github.com/zemanlx/kat/evaluator"
 )
 
 // TestSuite represents a policy directory with its policies, bindings, and test cases.

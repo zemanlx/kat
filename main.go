@@ -7,7 +7,7 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/zemanlx/kat/internal/evaluator"
+	"github.com/zemanlx/kat/evaluator"
 	"github.com/zemanlx/kat/internal/loader"
 	"github.com/zemanlx/kat/internal/reporter"
 )

@@ -17,7 +17,7 @@ import (
 	"k8s.io/apiserver/pkg/authentication/user"
 	"sigs.k8s.io/yaml"
 
-	"github.com/zemanlx/kat/internal/evaluator"
+	"github.com/zemanlx/kat/evaluator"
 	"github.com/zemanlx/kat/internal/loader"
 )
 

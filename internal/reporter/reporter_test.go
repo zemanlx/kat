@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zemanlx/kat/internal/evaluator"
+	"github.com/zemanlx/kat/evaluator"
 )
 
 func TestReporter_StartSuite(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/zemanlx/kat/internal/evaluator"
+	"github.com/zemanlx/kat/evaluator"
 )
 
 // OutputFormat specifies the output format for test results.

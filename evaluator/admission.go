@@ -309,7 +309,15 @@ func collectParams(
 		}
 
 		return []runtime.Object{params}, nil
-	case paramRef.ParameterNotFoundAction != nil && *paramRef.ParameterNotFoundAction == admissionregv1.DenyAction:
+	}
+
+	return noParams(paramRef)
+}
+
+// noParams is a binding's outcome without a params object: a Deny
+// parameterNotFoundAction is an error, otherwise the binding is skipped.
+func noParams(paramRef *admissionregv1.ParamRef) ([]runtime.Object, error) {
+	if paramRef.ParameterNotFoundAction != nil && *paramRef.ParameterNotFoundAction == admissionregv1.DenyAction {
 		return nil, errParamsNotFound
 	}
 

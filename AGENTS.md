@@ -6,9 +6,10 @@ Admission Policies (`ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy`).
 ## Project overview
 
 - Language: Go (module `github.com/zemanlx/kat`, `go 1.27.1`).
-- Entry point: `main.go`. Core logic under `internal/`:
+- Entry point: `main.go`. Core logic:
+  - `evaluator` — runs CEL evaluation and checks expected outcomes. Public: kar
+    imports it, and `CompileValidating` audits existing objects. Keep its API stable.
   - `internal/loader` — discovers suites, parses policies/bindings and test files.
-  - `internal/evaluator` — runs CEL evaluation and checks expected outcomes.
   - `internal/reporter` — renders default / verbose / JSON output.
 - `kat` runs entirely offline; no cluster required. It mirrors `go test` semantics
   (`-run`, `-v`, `-json`, exit `0` on pass, non-zero on any failure).
@@ -56,14 +57,14 @@ go build -o kat . && ./kat ./test-policies-pass/validating/require-owner-label
    Multiple resources may share one file, separated by `---`.
 - Only `v1` policies are supported; `v1beta1` documents are a hard error.
 - Policies and bindings are defaulted and validated as on creation
-  (`internal/evaluator/validation.go`, a port of the API server's). A policy the
+  (`evaluator/validation.go`, a port of the API server's). A policy the
   server would reject fails all its cases with "the API server would reject the
   policy: …". `-k8s-version` selects the creation-time CEL feature set
   (NewExpressions, compatibility version one minor older) within 1.36–1.37.
   Admission evaluation always uses StoredExpressions from the linked
   `k8s.io/apiserver` and cannot be downgraded. Structural validation is always
   the linked version's rules. Admission reuses the apiserver's CEL compiler,
-  match conditions and patchers (`internal/evaluator/validating.go`,
+  match conditions and patchers (`evaluator/validating.go`,
   `mutating.go`); do not add `k8s.io/kubernetes`.
 
 ## Test file conventions (the API is the filename)
@@ -89,7 +90,7 @@ DELETE; both ⇒ UPDATE; set `operation:` in `.request.yaml` for CONNECT. An exp
 `operation:` that conflicts with the inferred one is an error.
 
 The policy's `matchConstraints` and the binding's `matchResources` are applied the
-same way the API server applies them (`internal/evaluator/match.go`). A request that
+same way the API server applies them (`evaluator/match.go`). A request that
 doesn't match them is allowed with no mutation. The request resource comes from the
 object's kind via apimachinery's plural guess, which is right for every built-in
 kind. CONNECT tests, and CRDs with irregular plurals, set `resource:` in
