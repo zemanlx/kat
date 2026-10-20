@@ -24,7 +24,7 @@ go test -update ./...     # regenerate golden files (testdata/*.golden)
 golangci-lint run         # lint (golangci-lint v2; config: .golangci.yaml)
 ```
 
-- CI (`.github/workflows/ci.yml`) runs `go test -v ./...`, `golangci-lint-action@v7`
+- CI (`.github/workflows/ci.yml`) runs `go test -v ./...`, `golangci-lint-action@v9`
   (in the root and in `conformance/`), and the conformance matrix (see
   [Conformance tests](#conformance-tests)).
 - Go golden files (e.g. `testdata/json_output.golden`) are written by the custom

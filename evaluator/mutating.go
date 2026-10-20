@@ -114,7 +114,7 @@ func (p typedJSONPatcher) Patch(ctx context.Context, r patch.Request, runtimeCEL
 	}
 
 	if err := decodeTyped(u); err != nil {
-		return nil, apierrors.NewInternalError(err)
+		return nil, apierrors.NewInternalError(err) //nolint:wrapcheck // The server's StatusError, unchanged.
 	}
 
 	return patched, nil
