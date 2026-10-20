@@ -18,10 +18,10 @@ jobs:
         name: Test
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
             - name: Set up Go
-              uses: actions/setup-go@v5
+              uses: actions/setup-go@v7
               with:
                   go-version: "1.27.1"
             - name: Run Tests
@@ -33,7 +33,7 @@ jobs:
         outputs:
             k8s: ${{ steps.versions.outputs.k8s }}
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
             - name: Read conformance/k8s-versions.json
               id: versions
@@ -50,10 +50,10 @@ jobs:
             matrix:
                 k8s: ${{ fromJSON(needs.k8s-versions.outputs.k8s) }}
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
             - name: Set up Go
-              uses: actions/setup-go@v5
+              uses: actions/setup-go@v7
               with:
                   go-version: "1.27.1"
                   cache-dependency-path: |
@@ -65,7 +65,7 @@ jobs:
               run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
             - name: Cache envtest binaries
-              uses: actions/cache@v4
+              uses: actions/cache@v6
               with:
                   path: bin
                   key: envtest-${{ runner.os }}-${{ matrix.k8s }}-${{ steps.envtest-week.outputs.week }}-${{ hashFiles('hack/conformance.sh') }}
@@ -77,7 +77,7 @@ jobs:
 
             - name: Upload generated kat suites
               if: failure()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: conformance-suites-${{ matrix.k8s }}
                   path: conformance/.artifacts/
@@ -88,15 +88,15 @@ jobs:
         name: Lint
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
             - name: Set up Go
-              uses: actions/setup-go@v5
+              uses: actions/setup-go@v7
               with:
                   go-version: "1.27.1"
 
             - name: GolangCI-Lint
-              uses: golangci/golangci-lint-action@v7
+              uses: golangci/golangci-lint-action@v9
               with:
                   version: latest
                   install-mode: "goinstall"
@@ -105,7 +105,7 @@ jobs:
                   verify: false
 
             - name: GolangCI-Lint (conformance)
-              uses: golangci/golangci-lint-action@v7
+              uses: golangci/golangci-lint-action@v9
               with:
                   version: latest
                   install-mode: "goinstall"
