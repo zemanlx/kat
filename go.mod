@@ -1,6 +1,6 @@
 module github.com/zemanlx/kat
 
-go 1.27.1
+go 1.27.4
 
 require (
 	github.com/google/cel-go v0.29.2
