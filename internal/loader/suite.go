@@ -510,17 +510,19 @@ func inferOrValidateOperation(testReq *testRequest) error {
 }
 
 func matchPolicyName(baseName string, policyNames []string) string {
+	// Policy names may contain dots, so several can prefix baseName. The longest is the most specific.
+	matched := ""
 	for _, policyName := range policyNames {
-		if strings.HasPrefix(baseName, policyName+".") {
-			return policyName
+		if strings.HasPrefix(baseName, policyName+".") && len(policyName) > len(matched) {
+			matched = policyName
 		}
 	}
 
-	if len(policyNames) == 1 {
+	if matched == "" && len(policyNames) == 1 {
 		return policyNames[0]
 	}
 
-	return ""
+	return matched
 }
 
 func expectedAllowed(baseName string) bool {

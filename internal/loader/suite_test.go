@@ -456,6 +456,47 @@ func TestMatchPolicyName(t *testing.T) {
 	}
 }
 
+func TestMatchPolicyNameLongestPrefix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		baseName    string
+		policyNames []string
+		expected    string
+	}{
+		{
+			name:        "shorter name listed first",
+			baseName:    "foo.bar.allow",
+			policyNames: []string{"foo", "foo.bar"},
+			expected:    "foo.bar",
+		},
+		{
+			name:        "shorter name listed last",
+			baseName:    "foo.bar.allow",
+			policyNames: []string{"foo.bar", "foo"},
+			expected:    "foo.bar",
+		},
+		{
+			name:        "longer name does not match",
+			baseName:    "foo.baz.allow",
+			policyNames: []string{"foo", "foo.bar"},
+			expected:    "foo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := matchPolicyName(tt.baseName, tt.policyNames)
+			if got != tt.expected {
+				t.Errorf("matchPolicyName(%q, %v) = %q; want %q", tt.baseName, tt.policyNames, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestExpectedAllowed(t *testing.T) {
 	t.Parallel()
 

@@ -126,17 +126,30 @@ func loadedCount(ps *PolicySet) int {
 		len(ps.ValidatingPolicies) + len(ps.ValidatingBindings)
 }
 
-// FuzzTestFileName checks the filename grammar on arbitrary names.
+// FuzzTestFileName checks the filename grammar on arbitrary names, and that
+// matchPolicyName picks the right policy among the dot prefixes of the base and
+// the extra comma-separated policy names.
 func FuzzTestFileName(f *testing.F) {
 	for _, path := range globSeeds(f, "../../test-policies-pass/*/*/tests/*") {
-		f.Add(filepath.Base(path))
+		for _, extra := range []string{"", "other", "a,b"} {
+			f.Add(filepath.Base(path), extra)
+		}
 	}
 
-	f.Fuzz(func(t *testing.T, name string) {
+	f.Fuzz(func(t *testing.T, name, extra string) {
 		base := testBaseName(name)
 
 		checkTestFileGrammar(t, name, base)
-		checkMatchPolicyName(t, base, dotPrefixes(base))
+
+		candidates := dotPrefixes(base)
+
+		for policyName := range strings.SplitSeq(extra, ",") {
+			if policyName != "" {
+				candidates = append(candidates, policyName)
+			}
+		}
+
+		checkMatchPolicyName(t, base, candidates)
 	})
 }
 
@@ -157,9 +170,9 @@ func checkTestFileGrammar(t *testing.T, name, base string) {
 	}
 }
 
-// dotPrefixes returns the non-empty dot-separated prefixes of base. They stand in
-// for policy names, so the prefix match and the single-policy fallback both run.
-// An empty name is skipped because the empty prefix would match every base.
+// dotPrefixes returns the prefixes of base that end before a dot. Each one is a
+// policy name that prefixes base. The empty prefix is skipped because
+// matchPolicyName returns "" for no match, so "" could not name a policy.
 func dotPrefixes(base string) []string {
 	var prefixes []string
 
@@ -180,15 +193,29 @@ func checkMatchPolicyName(t *testing.T, base string, candidates []string) {
 		t.Fatalf("matchPolicyName(%q) = %q, not one of %q", base, got, candidates)
 	}
 
-	matched := slices.ContainsFunc(candidates, func(c string) bool {
-		return strings.HasPrefix(base, c+".")
-	})
+	if want := wantPolicyName(base, candidates); got != want {
+		t.Fatalf("matchPolicyName(%q) = %q, want %q among %q", base, got, want, candidates)
+	}
+}
 
-	if matched && (got == "" || !strings.HasPrefix(base, got+".")) {
-		t.Fatalf("matchPolicyName(%q) = %q, but a policy name prefixes the base", base, got)
+// wantPolicyName is the oracle for matchPolicyName. The longest candidate that
+// prefixes base wins. Without one, a single candidate is the fallback, and
+// several candidates give "".
+func wantPolicyName(base string, candidates []string) string {
+	var prefixes []string
+
+	for _, c := range candidates {
+		if strings.HasPrefix(base, c+".") {
+			prefixes = append(prefixes, c)
+		}
 	}
 
-	if !matched && len(candidates) > 1 && got != "" {
-		t.Fatalf("matchPolicyName(%q) = %q with %d policies and no prefix match", base, got, len(candidates))
+	switch {
+	case len(prefixes) > 0:
+		return slices.MaxFunc(prefixes, func(a, b string) int { return len(a) - len(b) })
+	case len(candidates) == 1:
+		return candidates[0]
+	default:
+		return ""
 	}
 }
