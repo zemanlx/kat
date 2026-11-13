@@ -8,6 +8,7 @@
 # kat - Kubernetes Admission Tester
 
 [![CI](https://github.com/zemanlx/kat/actions/workflows/ci.yml/badge.svg)](https://github.com/zemanlx/kat/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/zemanlx/kat/badge)](https://scorecard.dev/viewer/?uri=github.com/zemanlx/kat)
 [![License](https://img.shields.io/github/license/zemanlx/kat)](https://github.com/zemanlx/kat/blob/main/LICENSE)
 
 `kat` is a lightweight, local testing tool for Kubernetes Admission Policies (ValidatingAdmissionPolicy and MutatingAdmissionPolicy). It allows you to write test cases using standard Kubernetes manifests and verify your policies' behavior without needing a running cluster.
@@ -530,3 +531,13 @@ comprehensive set of examples covering:
 - `CONNECT` operations (kubectl exec)
 - Match conditions
 - Warnings and Audit annotations
+
+## Security
+
+Report a vulnerability privately as [SECURITY.md](SECURITY.md) describes. It also explains [kat's security design](SECURITY.md#security-design): what a wrong verdict can cost, the trust boundaries and how the design limits the harm. [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/zemanlx/kat) checks the repository weekly and on every push to `main`.
+
+From the next release on, release archives carry GitHub build provenance attestations. Verify a download with:
+
+```bash
+gh attestation verify kat_<os>_<arch>.tar.gz --owner zemanlx
+```
