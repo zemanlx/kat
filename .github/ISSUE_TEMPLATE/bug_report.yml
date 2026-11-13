@@ -1,0 +1,48 @@
+name: Bug report
+description: kat gave a wrong result, failed, or did not do what the README says.
+labels: [bug]
+body:
+  - type: input
+    id: kat-version
+    attributes:
+      label: kat version
+      description: The output of `kat -version`, or the release you installed.
+    validations:
+      required: true
+  - type: input
+    id: k8s-version
+    attributes:
+      label: Kubernetes version (-k8s-version)
+      description: The `-k8s-version` you passed, for example `1.37`, or `default` if you did not pass one.
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: The kat command you ran, for example `kat -v ./policies/my-policy`.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: |
+        The policy, the binding and the test files that show the problem, with a minimal object. Copy them as they are on disk.
+        This issue is public: redact Secret data, credentials and anything else sensitive. Report security problems privately as [SECURITY.md](https://github.com/zemanlx/kat/blob/main/SECURITY.md) describes.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: kat output
+      description: |
+        The output of `kat -v` for the failing case. Remove anything you do not want public.
+      render: text

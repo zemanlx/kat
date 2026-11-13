@@ -530,3 +530,7 @@ comprehensive set of examples covering:
 - `CONNECT` operations (kubectl exec)
 - Match conditions
 - Warnings and Audit annotations
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for reporting bugs, proposing changes, and the test and code style rules.
