@@ -541,3 +541,7 @@ From the next release on, release archives carry GitHub build provenance attesta
 ```bash
 gh attestation verify kat_<os>_<arch>.tar.gz --owner zemanlx
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for reporting bugs, proposing changes, and the test and code style rules.
