@@ -97,7 +97,8 @@ suffix — they are **not** in the input list and are optional:
 
 For base name `B` and the directory's policy names:
 
-1. If `B` starts with `<policyName>.`, that policy is selected.
+1. If `B` starts with `<policyName>.`, that policy is selected. When several names match
+   (policy names may contain dots), the longest one wins.
 2. Else, if the directory has exactly one policy, it is used regardless of prefix.
 3. Else (multiple policies, no prefix match), no policy is associated.
 
