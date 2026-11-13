@@ -39,5 +39,6 @@ kat's documentation lives in the repository's top-level files. This page indexes
 
 ## Security and contributing
 
-- [SECURITY.md](../SECURITY.md): how to report a vulnerability privately.
+- [Security](../README.md#security): reporting a vulnerability, Scorecard, and verifying release attestations.
+- [SECURITY.md](../SECURITY.md): how to report a vulnerability privately, kat's security design and how to verify releases.
 - [CONTRIBUTING.md](../CONTRIBUTING.md): how to report bugs, propose changes, and the test, development and code style rules.
