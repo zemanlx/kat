@@ -40,26 +40,10 @@ jobs:
 
             # Scorecard's Signed-Releases check looks for a release asset ending in .intoto.jsonl.
             - name: Upload build provenance to the release
-              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
               env:
+                  GH_TOKEN: ${{ github.token }}
                   BUNDLE: ${{ steps.attest.outputs.bundle-path }}
-                  TAG: ${{ github.ref_name }}
-              with:
-                  script: |
-                      const fs = require("fs");
-                      const tag = process.env.TAG;
-                      const name = `kat_${tag.replace(/^v/, "")}.intoto.jsonl`;
-                      const { owner, repo } = context.repo;
-                      const { data: release } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
-                      const stale = release.assets.find((asset) => asset.name === name);
-                      if (stale) {
-                          await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: stale.id });
-                      }
-                      await github.rest.repos.uploadReleaseAsset({
-                          owner,
-                          repo,
-                          release_id: release.id,
-                          name,
-                          data: fs.readFileSync(process.env.BUNDLE),
-                          headers: { "content-type": "application/octet-stream" },
-                      });
+              run: |
+                  version="${GITHUB_REF_NAME#v}"
+                  cp "$BUNDLE" "dist/kat_${version}.intoto.jsonl"
+                  gh release upload "$GITHUB_REF_NAME" "dist/kat_${version}.intoto.jsonl" --clobber

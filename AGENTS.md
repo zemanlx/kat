@@ -187,7 +187,7 @@ support statement in `README.md`. The `main` ruleset requires the
 OpenSSF Scorecard (`.github/workflows/scorecard.yml`) runs on every push to `main` and weekly; results are in the Security tab.
 
 - Pin actions by full commit SHA with a `# vX.Y.Z` comment. Dependabot bumps them.
-- No `@latest` and no unverified `curl` downloads in workflows. Pin the version of every tool. The golangci-lint version is the one `ci.yml` pins.
+- No `@latest` and no unverified `curl` downloads in workflows. Pin the version of every tool a workflow installs; the runner image's own tools (`gh`, `jq`) are not installed by us. The golangci-lint version is the one `ci.yml` pins.
 - Workflows declare `permissions: read-all`, `contents: read` or `{}` at the top and grant writes per job.
 - Never use `pull_request_target`, and never interpolate `${{ github.event.* }}` (or any other untrusted value) into `run:`. Pass it through `env:`.
 - `scorecard.yml` takes no `run:` steps and no top-level `env` or `defaults`, or publishing the results fails.
